@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest something Anchor should do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Anchor is built from `SPEC.md`. Check section 2.2 first: some things are
+        deliberately out of scope for v1, with the reasons given.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that Anchor makes hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered

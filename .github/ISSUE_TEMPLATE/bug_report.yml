@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in Anchor does not behave as described in SPEC.md
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not report ways for root to bypass Anchor. That is expected and
+        documented in SECURITY.md. For a security issue, use the Security tab.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. anchor start --profile Study --duration 1h --level soft
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Anchor version
+      description: Output of `anchor --version`.
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution and desktop
+      placeholder: Ubuntu 26.04, GNOME 50, Wayland
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `anchor doctor`
+      render: shell
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: "`journalctl -u anchord -u anchor-blockerd -n 100`. Anchor never logs visited domains, but check before pasting."
+      render: shell
