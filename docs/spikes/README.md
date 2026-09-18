@@ -1,115 +1,168 @@
 # Milestone 0: findings
 
 The risky assumptions in `SPEC.md`, and what testing them showed. The scripts
-are in [`spikes/`](../../spikes/); this page is the record of what they found
-and what it means for the code.
+are in [`spikes/`](../../spikes/); this page records what they found and what
+it means for the code.
 
-Status at the time of writing: **4 of 7 answered**.
+**4 of 7 answered.** The four that need a booted machine ran on an Ubuntu
+24.04 runner with systemd 255; the three that need a GNOME session are waiting
+on a desktop VM.
 
-| # | Question | Where it runs | Status |
+| # | Question | Where | Status |
 |---|---|---|---|
-| 1 | DNS in front of systemd-resolved, surviving network changes | CI virtual machine | Pending a run with systemd-resolved |
-| 2 | nftables DNS redirect exempting the resolver | CI virtual machine | **Answered: works** |
-| 3 | Netlink proc connector for process events | CI virtual machine | **Answered: works** |
-| 4 | StatusNotifier/AppIndicator on current GNOME | Desktop VM | Pending |
-| 5 | Fullscreen break overlay on Wayland, multiple monitors | Desktop VM | **Partly answered: limits found** |
+| 1 | DNS in front of systemd-resolved | CI VM | **Works**, with a caveat to confirm on a NetworkManager desktop |
+| 2 | nftables DNS redirect exempting the resolver | CI VM | **Works** |
+| 3 | Netlink proc connector | CI VM | **Works** |
+| 4 | StatusNotifier/AppIndicator on GNOME | Desktop VM | Pending |
+| 5 | Fullscreen break overlay on Wayland | Desktop VM | Limits established, run pending |
 | 6 | Browser DoH policy paths | Desktop VM | Pending |
-| 7 | Runtime `RefuseManualStop` drop-in | CI virtual machine | Pending a run under systemd |
+| 7 | Runtime `RefuseManualStop` drop-in | CI VM | **Works** |
+
+Nothing so far contradicts the specification. One point in SPEC 10 needs a
+qualification, and it is the only item needing a decision (spike 5).
+
+---
+
+## Spike 1: DNS in front of systemd-resolved — works
+
+**The question.** SPEC 8.2 says Anchor runs a forwarding resolver and puts
+itself in front of the system resolver through a drop-in, following network
+changes automatically.
+
+**Result.** Both routes work on systemd 255:
+
+- **A global `DNS=127.0.0.1:<port>` with `Domains=~.`** in
+  `/etc/systemd/resolved.conf.d/`. Queries reached Anchor's resolver.
+- **Per-link configuration** (`resolvectl dns <link> …` plus a `~.` routing
+  domain on each link). Also worked, on all three links present.
+
+Blocking was verified the only way that proves anything: a name that resolves
+perfectly well on its own came back `NXDOMAIN`, which only Anchor could have
+produced, while an unblocked name still resolved through the forwarder.
+
+### A false result, and what it taught
+
+The first run reported that queries never reached Anchor, and the write-up in
+commit `3ce9bc2` concluded that a link's DHCP servers outrank the global
+setting. **That conclusion was wrong**, and the correction matters because it
+changes what Milestone 2 builds.
+
+The spike had asked for a name under `.invalid`. That is a special-use domain
+reserved by RFC 6761, and systemd-resolved answers it locally without asking
+any DNS server at all. So the query genuinely never reached Anchor's resolver —
+not because the drop-in failed, but because there was nothing to forward. The
+same bad probe also made the blocking check meaningless: a `.invalid` name
+returns `NXDOMAIN` whether or not Anchor ever sees it, so that check was
+passing for the wrong reason. One mistake, two misleading symptoms, in opposite
+directions.
+
+**What this means for the code.** systemd-resolved answers some things without
+forwarding, so Anchor's resolver will never see them. That is harmless for
+special-use domains, but the same mechanism is why the drop-in must set
+`Cache=no`: a cached answer is another query Anchor never sees, and a domain
+blocked mid-session would keep resolving from cache until the entry expired.
+
+**Still to confirm.** The runner had no NetworkManager. On a desktop where NM
+sets per-link DNS and routing domains, the global setting may not win, so
+Milestone 2 should configure per-link and re-apply on link changes, treating
+the global drop-in as a backstop rather than the mechanism. Spike 4's run on
+the desktop VM is the chance to check this.
 
 ---
 
 ## Spike 2: redirecting DNS without trapping the resolver — works
 
-**The problem.** Anchor redirects all outbound DNS to its own resolver. That
-resolver then has to forward upstream, and if its forwarded query is redirected
-too, it loops back into itself and nothing resolves. SPEC 8.2 calls for an
-exemption "that exempts the resolver process" without saying how.
+**The problem.** Anchor redirects all outbound DNS to its own resolver, which
+then has to forward upstream. If that forwarded query is redirected too, the
+resolver loops back into itself and nothing resolves. SPEC 8.2 asks for an
+exemption without saying how.
 
-**What was tested.** A real `table inet` nat output hook redirecting UDP and TCP
-port 53, with two candidate exemptions, and real packets sent through it.
-
-**Result.** The firewall mark works and is the right choice:
+**Result.** The firewall mark works, and is the right choice:
 
 ```
 meta mark 0x616e return
-meta l4proto { udp, tcp } th dport 53 redirect to :5391
+meta l4proto { udp, tcp } th dport 53 redirect to :<port>
 ```
 
-The resolver sets the mark on its own sockets with `SO_MARK`. An unmarked query
-was redirected; a marked one went straight out.
+An unmarked query was redirected; a marked one went straight out.
 
 **Why the mark rather than the user.** `meta skuid` would exempt every process
-running as that user. Both root daemons run as root, so would every other root
-process on the machine, and the exemption would be trivially borrowed. Setting
-`SO_MARK` requires `CAP_NET_ADMIN`, so an ordinary process cannot claim it. That
-is a real difference in a tool whose whole purpose is friction.
+running as that user. Both root daemons run as root, so that would exempt every
+root process on the machine, and the exemption could be borrowed by anything.
+Setting `SO_MARK` needs `CAP_NET_ADMIN`, so an ordinary process cannot claim
+it. In a tool whose entire value is friction, that difference is the point.
 
-**Consequence for the code.** `anchor-blockerd` sets `SO_MARK` to `0x616e` on
-every upstream socket, and the nftables table carries the `meta mark` return
-rule as its first rule. Milestone 2 implements it.
+**For the code.** `anchor-blockerd` sets `SO_MARK` to `0x616e` on every
+upstream socket, and the `inet anchor` table carries the `meta mark` return as
+its first rule.
 
 ---
 
 ## Spike 3: netlink proc connector — works
 
-**The problem.** SPEC 9 wants a blocked application killed the moment it
-launches, with a 2-second poll only as a fallback. That needs kernel process
-events.
-
-**What was tested.** Subscribing to `CN_IDX_PROC` over `NETLINK_CONNECTOR`,
-launching a process, and timing the exec event.
-
-**Result.** The exec event arrived **2.2 ms** after launch. Subscribing and
-unsubscribing both worked cleanly.
+**Result.** Exec events arrived **0.8 ms** after launch on the runner, and
+2.2 ms in a container. Subscribing and unsubscribing both worked cleanly.
 
 **The catch.** Binding to the process event group needs `CAP_NET_ADMIN` and a
 kernel built with `CONFIG_PROC_EVENTS`. `anchor-blockerd` already holds that
-capability for nftables, so nothing extra is needed, but the polling fallback
-still has to exist for kernels without the option.
+capability for nftables, so nothing extra is needed — but the 2-second polling
+fallback in SPEC 9 still has to exist for kernels without the option.
 
-**Consequence for the code.** Application detection is event-driven, with the
-2-second poll as a genuine fallback rather than the main path. The 2-minute
-grace period of SPEC 7.1 is unaffected.
-
----
-
-## Spike 5: the Wayland overlay — the specification needs a qualification
-
-Not fully run yet, but the limits are established by how Wayland works, and
-they change what SPEC 10 can promise.
-
-**A fullscreen window per monitor is available.** GTK4's
-`fullscreen_on_monitor()` covers each monitor, and `Gdk.Display.get_monitors()`
-enumerates them, so "fullscreen overlay with countdown on all monitors" is
-achievable.
-
-**Two things are not.** Wayland gives no way for an ordinary client to force
-itself above everything, and GNOME does not implement the layer-shell protocol
-that wlroots compositors offer. A client also cannot grab the keyboard.
-
-**What that means for a Mandatory break.** A Mandatory break cannot mean the
-screen is seized: the user can always switch away. It has to mean the overlay
-comes back, promptly and repeatedly, for as long as the break lasts. That is a
-real difference from what "mandatory" might suggest, and it belongs in the
-README's limitations section rather than being quietly glossed.
-
-This needs the owner's agreement before Milestone 5 builds it.
+**For the code.** Application detection is event-driven, with polling as a
+genuine fallback rather than the main path.
 
 ---
 
-## How to run the rest
+## Spike 7: the `RefuseManualStop` drop-in — works
 
-The four machine-level spikes run unattended:
+The whole cycle behaved as SPEC 5.3 assumes, on systemd 255:
+
+- the unit stops normally when no drop-in is present, which is what
+  uninstalling depends on (SPEC 7.6);
+- with `RefuseManualStop=yes` written to
+  `/run/systemd/system/<unit>.d/anchor-session.conf` and a `daemon-reload`,
+  `systemctl stop` was **refused** and the service stayed active;
+- removing the drop-in and reloading handed control straight back;
+- `/run` is a tmpfs, so a reboot clears it and the engine rewrites it if a
+  session is still running.
+
+**For the code.** The mitigation in SPEC 16 holds as described, with the
+residual risk unchanged: root can delete the drop-in.
+
+---
+
+## Spike 5: the Wayland overlay — SPEC 10 needs a qualification
+
+Not yet run, but the limits follow from how Wayland works and they change what
+a break can promise.
+
+**Available.** GTK4's `fullscreen_on_monitor()` covers each monitor and
+`Gdk.Display.get_monitors()` enumerates them, so "fullscreen overlay with
+countdown on all monitors" is achievable.
+
+**Not available.** Wayland gives no way for an ordinary client to force itself
+above everything, and GNOME does not implement the layer-shell protocol that
+wlroots compositors offer. A client also cannot grab the keyboard.
+
+**So a Mandatory break cannot mean the screen is seized.** The user can always
+switch away. It can only mean the overlay returns, promptly and repeatedly, for
+as long as the break lasts. That is a real difference from what "mandatory"
+suggests, it belongs in the README's limitations, and **it needs the owner's
+agreement before Milestone 5 builds it.**
+
+---
+
+## Running the rest
+
+Four machine-level spikes, unattended:
 
 ```sh
 gh workflow run "M0 spikes"      # or push a change under spikes/
 ```
 
-The three desktop spikes need a GNOME session in a disposable VM:
+Three desktop spikes, in a disposable VM with a fresh snapshot:
 
 ```sh
 python3 spikes/run_desktop.py                 # look, do not touch
 sudo python3 spikes/run_desktop.py --write    # also write browser policies
 ```
-
-Take a snapshot first.
