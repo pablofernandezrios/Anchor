@@ -1,0 +1,16 @@
+[Unit]
+Description=Anchor user agent
+Documentation=https://github.com/pablofernandezrios/anchor
+# Notifications, the break overlay and the top-bar indicator all need the
+# graphical session, so this is a user unit rather than a system one.
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/anchor-agent
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

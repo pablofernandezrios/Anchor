@@ -1,0 +1,39 @@
+[Unit]
+Description=Anchor engine
+Documentation=https://github.com/pablofernandezrios/anchor
+# The engine owns the session state and must be there before anything that
+# depends on blocking. It does not touch the network itself.
+After=local-fs.target
+Before=anchor-blockerd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/anchord
+Restart=always
+RestartSec=1
+
+# A crash during an active block must leave the block standing (SPEC P4), so
+# the service is restarted rather than allowed to give up. Without a start
+# limit systemd would stop trying after a few rapid failures.
+StartLimitIntervalSec=0
+
+StateDirectory=anchor
+StateDirectoryMode=0750
+RuntimeDirectory=anchor
+RuntimeDirectoryMode=0755
+ConfigurationDirectory=anchor
+
+# The engine needs root to write the runtime drop-ins of SPEC 5.3, but nothing
+# beyond that.
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

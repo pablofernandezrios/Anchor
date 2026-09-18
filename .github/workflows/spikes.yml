@@ -1,0 +1,94 @@
+name: M0 spikes
+
+# The Milestone 0 spikes that need a real machine: systemd as PID 1, nftables,
+# and the kernel's process events. GitHub's Ubuntu runners are full virtual
+# machines rather than containers, so they can answer these questions without
+# anyone touching a desktop. The three remaining spikes need a GNOME session
+# and are run by hand with spikes/run_desktop.py.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "spikes/**"
+      - ".github/workflows/spikes.yml"
+  schedule:
+    # Monthly, so a change in the distribution does not go unnoticed.
+    - cron: "0 6 1 * *"
+
+permissions:
+  contents: read
+
+jobs:
+  spikes:
+    name: Spikes on ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Describe the machine
+        run: |
+          echo "## Machine" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo '```'
+            . /etc/os-release && echo "$PRETTY_NAME"
+            uname -sr
+            echo "PID 1: $(ps -p 1 -o comm=)"
+            systemctl --version | head -1 || echo "systemd: absent"
+            resolvectl --version 2>/dev/null | head -1 || echo "systemd-resolved: absent"
+            nft --version 2>/dev/null || echo "nftables: absent"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install what the spikes need
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq nftables systemd-resolved
+
+      - name: Spike 1 - DNS in front of systemd-resolved
+        id: s1
+        continue-on-error: true
+        working-directory: spikes
+        run: sudo -E python3 s1_dns_resolved.py "$GITHUB_WORKSPACE/spike-results"
+
+      - name: Spike 2 - nftables DNS redirect exempting the resolver
+        id: s2
+        continue-on-error: true
+        working-directory: spikes
+        run: sudo -E python3 s2_nftables_redirect.py "$GITHUB_WORKSPACE/spike-results"
+
+      - name: Spike 3 - netlink proc connector
+        id: s3
+        continue-on-error: true
+        working-directory: spikes
+        run: sudo -E python3 s3_proc_connector.py "$GITHUB_WORKSPACE/spike-results"
+
+      - name: Spike 7 - runtime RefuseManualStop drop-in
+        id: s7
+        continue-on-error: true
+        working-directory: spikes
+        run: sudo -E python3 s7_refuse_manual_stop.py "$GITHUB_WORKSPACE/spike-results"
+
+      - name: Confirm the machine was left as it was found
+        run: |
+          echo "## Left-behind state" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo '```'
+            echo "nftables tables:"; sudo nft list tables || true
+            echo "anchor drop-ins under /run:"; ls -la /run/systemd/system/ 2>/dev/null | grep -i anchor || echo "  none"
+            echo "resolved drop-ins:"; ls -la /etc/systemd/resolved.conf.d/ 2>/dev/null || echo "  none"
+            echo "resolution still works:"; getent hosts github.com || echo "  BROKEN"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summarise
+        run: python3 spikes/summarise.py spike-results >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spike-findings-${{ matrix.runner }}
+          path: spike-results/
+
+      - name: Fail if a spike contradicted the specification
+        run: python3 spikes/summarise.py spike-results --check
