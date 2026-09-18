@@ -53,7 +53,9 @@ TARGETS: tuple[Target, ...] = (
     Target(
         "Firefox (Flatpak)",
         ("/var/lib/flatpak/app/org.mozilla.firefox",),
-        Path("/var/lib/flatpak/app/org.mozilla.firefox/current/active/files/lib/firefox/distribution/policies.json"),
+        Path(
+            "/var/lib/flatpak/app/org.mozilla.firefox/current/active/files/lib/firefox/distribution/policies.json"
+        ),
         "firefox",
         "Flatpak needs the policy inside the sandbox or an override.",
     ),
@@ -140,9 +142,7 @@ def spike(report: SpikeReport) -> None:
             try:
                 target.policy_path.parent.mkdir(parents=True, exist_ok=True)
                 merged = _policy_for(target.style)
-                target.policy_path.write_text(
-                    json.dumps(merged, indent=2) + "\n", encoding="utf-8"
-                )
+                target.policy_path.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
                 written = json.loads(target.policy_path.read_text(encoding="utf-8"))
                 ok = written == merged
             except OSError as error:

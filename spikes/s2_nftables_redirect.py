@@ -180,9 +180,7 @@ def spike(report: SpikeReport) -> None:
         report.add(
             "clean restore",
             Verdict.WORKS if not left.ok else Verdict.FAILS,
-            "the spike table was removed"
-            if not left.ok
-            else "the spike table is still loaded",
+            "the spike table was removed" if not left.ok else "the spike table is still loaded",
         )
 
 

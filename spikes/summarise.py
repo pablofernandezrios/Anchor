@@ -12,13 +12,17 @@ import sys
 from pathlib import Path
 from typing import Any
 
-MARK = {"works": "PASS", "fails": "FAIL", "unavailable": "SKIP"}
+MARK = {
+    "works": "PASS",
+    "fails": "FAIL",
+    "unavailable": "SKIP",
+    "ruled_out": "RULED OUT",
+}
 
 
 def load(directory: Path) -> list[dict[str, Any]]:
     return [
-        json.loads(path.read_text(encoding="utf-8"))
-        for path in sorted(directory.glob("*.json"))
+        json.loads(path.read_text(encoding="utf-8")) for path in sorted(directory.glob("*.json"))
     ]
 
 
@@ -39,9 +43,7 @@ def render(reports: list[dict[str, Any]]) -> str:
         ]
         for finding in report["findings"]:
             detail = finding["detail"].replace("|", "\\|")
-            lines.append(
-                f"| {finding['name']} | {MARK.get(finding['verdict'], '?')} | {detail} |"
-            )
+            lines.append(f"| {finding['name']} | {MARK.get(finding['verdict'], '?')} | {detail} |")
         lines.append("")
     return "\n".join(lines) + "\n"
 

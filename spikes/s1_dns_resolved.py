@@ -26,7 +26,12 @@ from lib import SpikeReport, Verdict, have, main, restored_file, run
 
 RESOLVER_PORT = 5391
 DROP_IN = Path("/etc/systemd/resolved.conf.d/zz-anchor-spike.conf")
-PROBE = "spike-probe.anchor.invalid"
+#: A name that resolves perfectly well on its own. Asking for it and getting
+#: NXDOMAIN proves Anchor answered, which a .invalid name never could: that
+#: would come back NXDOMAIN whether or not the query ever reached us.
+BLOCKED_PROBE = "example.com"
+#: A second name, left unblocked, to prove forwarding still works.
+ALLOWED_PROBE = "example.net"
 
 
 class TinyForwarder:
@@ -165,7 +170,44 @@ def spike(report: SpikeReport) -> None:
         run("sh", "-c", "ls -l /etc/resolv.conf; head -5 /etc/resolv.conf").text,
     )
 
-    with TinyForwarder(upstreams[0], blocked={PROBE}) as forwarder, restored_file(DROP_IN):
+    with TinyForwarder(upstreams[0], blocked={BLOCKED_PROBE}) as forwarder:
+        _try_global_dns(report, forwarder)
+        _try_per_link_dns(report, forwarder)
+
+    run("systemctl", "restart", "systemd-resolved")
+    report.add(
+        "clean restore",
+        Verdict.WORKS,
+        "the drop-in was removed, every link reverted and systemd-resolved restarted",
+        run("resolvectl", "status").out[:600],
+    )
+
+    _report_network_changes(report)
+    _report_fallback(report)
+
+
+def _links() -> list[str]:
+    """Network links resolved knows about, excluding loopback."""
+    names: list[str] = []
+    for match in re.finditer(r"Link \d+ \(([^)]+)\)", run("resolvectl", "status").out):
+        name = match.group(1)
+        if name != "lo":
+            names.append(name)
+    return names
+
+
+def _query_reaches_anchor(forwarder: TinyForwarder, name: str) -> tuple[bool, str]:
+    """Ask for ``name`` and report whether Anchor's resolver saw the question."""
+    before = len(forwarder.seen)
+    run("resolvectl", "flush-caches")
+    result = run("resolvectl", "query", "--cache=no", name, timeout=15)
+    saw = any(seen == name or seen.endswith("." + name) for seen in forwarder.seen[before:])
+    return saw, result.text
+
+
+def _try_global_dns(report: SpikeReport, forwarder: TinyForwarder) -> None:
+    """Mechanism A: a global DNS= drop-in, which is the obvious first attempt."""
+    with restored_file(DROP_IN):
         DROP_IN.parent.mkdir(parents=True, exist_ok=True)
         DROP_IN.write_text(
             "# Anchor spike. Removed automatically.\n"
@@ -177,62 +219,81 @@ def spike(report: SpikeReport) -> None:
             "Cache=no\n",
             encoding="utf-8",
         )
-        restarted = run("systemctl", "restart", "systemd-resolved")
-        if not restarted.ok:
+        if not run("systemctl", "restart", "systemd-resolved").ok:
             report.add(
-                "drop-in accepted",
+                "global DNS= drop-in",
                 Verdict.FAILS,
                 "systemd-resolved refused to restart with the drop-in in place",
-                restarted.text,
             )
             return
 
+        saw, detail = _query_reaches_anchor(forwarder, BLOCKED_PROBE)
         report.add(
-            "drop-in accepted",
-            Verdict.WORKS,
-            f"resolved restarted with DNS=127.0.0.1:{RESOLVER_PORT}",
-            run("resolvectl", "status").out[:1500],
-        )
-
-        # Does a real query reach our resolver?
-        run("resolvectl", "flush-caches")
-        query = run("resolvectl", "query", "--cache=no", PROBE, timeout=15)
-        if forwarder.seen:
-            report.add(
-                "queries reach Anchor",
-                Verdict.WORKS,
-                f"the resolver saw {len(forwarder.seen)} query(ies), including {forwarder.seen[0]}",
-                "\n".join(forwarder.seen[:10]),
-            )
-        else:
-            report.add(
-                "queries reach Anchor",
-                Verdict.FAILS,
-                "no query arrived at the local resolver, so the drop-in does not "
-                "actually route traffic through Anchor",
-                query.text[:1000],
-            )
-
-        blocked_ok = "NXDOMAIN" in query.text or "not found" in query.text.lower()
-        report.add(
-            "NXDOMAIN reaches the client",
-            Verdict.WORKS if blocked_ok else Verdict.FAILS,
-            "a blocked name comes back as NXDOMAIN"
-            if blocked_ok
-            else "the blocked name did not surface as NXDOMAIN",
-            query.text[:1000],
+            "mechanism A: global DNS= drop-in",
+            Verdict.WORKS if saw else Verdict.RULED_OUT,
+            "queries reach Anchor through a global DNS= setting"
+            if saw
+            else "queries do NOT reach Anchor. A link with its own DNS servers "
+            "from DHCP wins over the global setting, so the global DNS= is only "
+            "consulted when no link matches. This is the mechanism to avoid",
+            detail[:800],
         )
 
     run("systemctl", "restart", "systemd-resolved")
-    report.add(
-        "clean restore",
-        Verdict.WORKS,
-        "the drop-in was removed and systemd-resolved restarted",
-        run("resolvectl", "status").out[:600],
-    )
 
-    _report_network_changes(report)
-    _report_fallback(report)
+
+def _try_per_link_dns(report: SpikeReport, forwarder: TinyForwarder) -> None:
+    """Mechanism B: per-link DNS, which is what actually outranks DHCP."""
+    links = _links()
+    if not links:
+        report.add(
+            "mechanism B: per-link DNS",
+            Verdict.UNAVAILABLE,
+            "no non-loopback link was found to configure",
+        )
+        return
+
+    try:
+        for link in links:
+            run("resolvectl", "dns", link, f"127.0.0.1:{RESOLVER_PORT}")
+            run("resolvectl", "domain", link, "~.")
+
+        saw, detail = _query_reaches_anchor(forwarder, BLOCKED_PROBE)
+        report.add(
+            "mechanism B: per-link DNS",
+            Verdict.WORKS if saw else Verdict.FAILS,
+            f"queries reach Anchor once every link ({', '.join(links)}) is pointed "
+            "at it with a ~. routing domain"
+            if saw
+            else "queries still do not reach Anchor even with per-link DNS set",
+            detail[:800],
+        )
+
+        if saw:
+            blocked_ok = "NXDOMAIN" in detail or "not found" in detail.lower()
+            report.add(
+                "blocking actually blocks",
+                Verdict.WORKS if blocked_ok else Verdict.FAILS,
+                f"{BLOCKED_PROBE} resolves normally, and came back NXDOMAIN, which "
+                "only Anchor could have done"
+                if blocked_ok
+                else f"{BLOCKED_PROBE} did not come back NXDOMAIN",
+                detail[:800],
+            )
+
+            allowed_saw, allowed_detail = _query_reaches_anchor(forwarder, ALLOWED_PROBE)
+            forwarded = allowed_saw and "NXDOMAIN" not in allowed_detail
+            report.add(
+                "unblocked names still resolve",
+                Verdict.WORKS if forwarded else Verdict.FAILS,
+                f"{ALLOWED_PROBE} passed through Anchor and was answered upstream"
+                if forwarded
+                else f"{ALLOWED_PROBE} did not resolve, so forwarding is broken",
+                allowed_detail[:800],
+            )
+    finally:
+        for link in links:
+            run("resolvectl", "revert", link)
 
 
 def _report_network_changes(report: SpikeReport) -> None:

@@ -34,6 +34,14 @@ class Verdict(StrEnum):
     UNAVAILABLE = "unavailable"
     """This machine cannot answer the question; try it elsewhere."""
 
+    RULED_OUT = "ruled_out"
+    """An approach that does not work, where another one does.
+
+    This is a useful answer rather than a contradiction, so it does not fail
+    the build: knowing which of two mechanisms to avoid is the point of trying
+    both. A spike fails only when every approach to a question fails.
+    """
+
 
 @dataclass
 class Finding:
@@ -43,7 +51,12 @@ class Finding:
     evidence: str = ""
 
     def line(self) -> str:
-        mark = {Verdict.WORKS: "PASS", Verdict.FAILS: "FAIL", Verdict.UNAVAILABLE: "SKIP"}
+        mark = {
+            Verdict.WORKS: "PASS",
+            Verdict.FAILS: "FAIL",
+            Verdict.UNAVAILABLE: "SKIP",
+            Verdict.RULED_OUT: "RULED OUT",
+        }
         return f"[{mark[self.verdict]}] {self.name}: {self.detail}"
 
 
@@ -53,9 +66,7 @@ class SpikeReport:
     question: str
     findings: list[Finding] = field(default_factory=list)
 
-    def add(
-        self, name: str, verdict: Verdict, detail: str, evidence: str = ""
-    ) -> Finding:
+    def add(self, name: str, verdict: Verdict, detail: str, evidence: str = "") -> Finding:
         finding = Finding(name=name, verdict=verdict, detail=detail, evidence=evidence)
         self.findings.append(finding)
         print(finding.line(), flush=True)
