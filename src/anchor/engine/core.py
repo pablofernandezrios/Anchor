@@ -1,0 +1,361 @@
+"""The engine: the only component that decides anything (SPEC 5.1).
+
+Every other part of Anchor is a thin client. The engine owns the configuration,
+the state and the session timers, answers requests, and publishes events.
+
+One reading of the specification is worth stating, because the wording leaves
+room for two. SPEC 7.2 and 7.5 describe leaving as "cancel after a wait" and
+"request unlock, wait 30 minutes", without a second confirmation step. Anchor
+therefore treats a pending exit as taking effect by itself once its wait has
+run out, unless it is withdrawn first, and asks for the phrase only where a
+phrase is owed. The alternative reading, where the user must come back and
+confirm, would quietly turn a 30-minute wait into an indefinite one for anyone
+who walks away from the machine.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
+from typing import Any
+
+from anchor.engine.paths import Paths, Settings
+from anchor.engine.profiles import Profile
+from anchor.engine.sessions import (
+    ExitKind,
+    Rupture,
+    Session,
+    SessionPolicy,
+    start_session,
+)
+from anchor.engine.state import EngineState
+from anchor.engine.store import LoadStatus, SignedStore, load_or_create_key
+from anchor.engine.timekeeping import Clock, SystemClock, reconcile
+from anchor.protocol.errors import AnchorError, ErrorCode
+from anchor.protocol.messages import Event, Request, Response
+from anchor.protocol.types import Level, RuptureKind, SessionOrigin, Valve
+
+log = logging.getLogger("anchord")
+
+EventSink = Callable[[Event], None]
+
+
+class Engine:
+    """Holds the state and answers requests."""
+
+    def __init__(
+        self,
+        paths: Paths,
+        settings: Settings,
+        *,
+        clock: Clock | None = None,
+        policy: SessionPolicy | None = None,
+    ) -> None:
+        self.paths = paths
+        self.settings = settings
+        self.clock: Clock = clock or SystemClock()
+        self.policy = policy or SessionPolicy()
+        self.state = EngineState()
+        self.profiles: dict[str, Profile] = {}
+        self._sinks: list[EventSink] = []
+
+        key = load_or_create_key(paths.key_file)
+        self._config_store = SignedStore(paths.config_file, key)
+        self._state_store = SignedStore(paths.state_file, key)
+
+    # -- events ---------------------------------------------------------
+
+    def subscribe(self, sink: EventSink) -> None:
+        self._sinks.append(sink)
+
+    def unsubscribe(self, sink: EventSink) -> None:
+        if sink in self._sinks:
+            self._sinks.remove(sink)
+
+    def emit(self, event: str, payload: dict[str, Any] | None = None) -> None:
+        message = Event(event=event, payload=payload or {})
+        for sink in list(self._sinks):
+            try:
+                sink(message)
+            except OSError:
+                # A subscriber that went away must not take the engine with it.
+                self.unsubscribe(sink)
+
+    # -- persistence ----------------------------------------------------
+
+    def load(self) -> None:
+        """Read configuration and state from disk, then reconcile the clock."""
+        self.paths.ensure_directories()
+
+        config = self._config_store.load()
+        if config.status is LoadStatus.TAMPERED:
+            log.warning("config.json failed its integrity check: %s", config.detail)
+        self.profiles = {
+            name: Profile.from_dict(raw)
+            for name, raw in (config.data.get("profiles") or {}).items()
+        }
+
+        stored = self._state_store.load()
+        if stored.status is LoadStatus.TAMPERED:
+            # Keeping the stricter interpretation means trusting the session
+            # that was recorded rather than dropping it (SPEC 6.1, P4): an edit
+            # to state.json must not be a way to end a session.
+            log.warning("state.json failed its integrity check: %s", stored.detail)
+            self.state = EngineState.from_dict(stored.data) if stored.data else EngineState()
+            self._record_rupture(RuptureKind.TAMPERING, f"state.json was modified: {stored.detail}")
+        else:
+            self.state = EngineState.from_dict(stored.data)
+
+        self.tick()
+
+    def save(self) -> None:
+        self._state_store.save(self.state.to_dict())
+
+    def save_config(self) -> None:
+        self._config_store.save(
+            {"profiles": {name: profile.to_dict() for name, profile in self.profiles.items()}}
+        )
+
+    # -- the clock ------------------------------------------------------
+
+    def tick(self) -> None:
+        """Advance the session: expire it, or let a completed exit take effect.
+
+        Called on a timer, and on boot and resume, where SPEC 6.2 requires
+        expired sessions to end and active ones to resume with the time left.
+        """
+        session = self.state.session
+        if session is None:
+            return
+
+        outcome = reconcile(session.anchor, self.clock)
+        if outcome.anchor is not session.anchor:
+            session = Session(**{**_as_kwargs(session), "anchor": outcome.anchor})
+            self.state.session = session
+
+        if outcome.tampered:
+            self._record_rupture(
+                RuptureKind.TAMPERING,
+                f"the system clock moved by {outcome.wall_drift_seconds:.0f} seconds",
+            )
+
+        if outcome.expired:
+            self._end_session(reason="completed")
+            return
+
+        pending = session.exit_request
+        if (
+            pending is not None
+            and pending.phrase is None
+            and pending.remaining_wait(self.clock) <= 0
+        ):
+            # The wait was the whole price, and it has been paid.
+            result = session.complete_exit(clock=self.clock)
+            if result.rupture is not None:
+                self._store_rupture(result.rupture)
+            self._end_session(reason=str(pending.kind))
+
+    # -- requests -------------------------------------------------------
+
+    def handle(self, request: Request) -> Response:
+        handler = self._handlers().get(request.type)
+        if handler is None:
+            return request.fail(
+                ErrorCode.NOT_IMPLEMENTED,
+                f"{request.type} is not available in this build yet",
+            )
+        try:
+            return handler(request)
+        except AnchorError as error:
+            return request.fail(error.code, error.message)
+        except Exception:
+            log.exception("unhandled error while serving %s", request.type)
+            return request.fail(ErrorCode.INTERNAL, "the engine hit an unexpected error")
+
+    def _handlers(self) -> dict[str, Callable[[Request], Response]]:
+        return {
+            "status.get": self._on_status,
+            "session.start": self._on_start,
+            "session.extend": self._on_extend,
+            "session.cancel": self._on_cancel,
+            "session.withdraw_cancel": self._on_withdraw,
+            "valve.request": self._on_valve_request,
+            "valve.withdraw": self._on_withdraw,
+            "valve.phrase": self._on_valve_phrase,
+        }
+
+    def _on_status(self, request: Request) -> Response:
+        self.tick()
+        return request.ok(self.status())
+
+    def status(self) -> dict[str, Any]:
+        """The snapshot every client renders (SPEC 14, 15)."""
+        session = self.state.session
+        if session is None:
+            return {
+                "active": False,
+                "skips_remaining": self.state.skips_remaining,
+                "profiles": sorted(self.profiles),
+            }
+
+        outcome = reconcile(session.anchor, self.clock)
+        pending = session.exit_request
+        return {
+            "active": True,
+            "session_id": session.id,
+            "profile": session.profile,
+            "level": str(session.level),
+            "origin": str(session.origin),
+            "valve": str(session.valve) if session.valve else None,
+            "phase": str(session.phase),
+            "started_at": session.anchor.started_at,
+            "ends_at": session.anchor.ends_at,
+            "remaining_seconds": outcome.remaining_seconds,
+            "blocked_attempts": session.blocked_attempts,
+            "skips_remaining": self.state.skips_remaining,
+            "exit_request": (
+                {
+                    "kind": str(pending.kind),
+                    "remaining_wait_seconds": pending.remaining_wait(self.clock),
+                    "phrase": pending.phrase,
+                }
+                if pending
+                else None
+            ),
+        }
+
+    def _on_start(self, request: Request) -> Response:
+        if self.state.session is not None:
+            raise AnchorError("a session is already running", code=ErrorCode.SESSION_ALREADY_ACTIVE)
+
+        payload = request.payload
+        profile_name = str(payload["profile"])
+        if self.profiles and profile_name not in self.profiles:
+            raise AnchorError(
+                f"there is no profile called {profile_name!r}",
+                code=ErrorCode.UNKNOWN_PROFILE,
+            )
+
+        level: Level = payload["level"]
+        valve: Valve | None = payload["valve"]
+        origin: SessionOrigin = payload["origin"]
+
+        session = start_session(
+            profile=profile_name,
+            level=level,
+            duration_seconds=float(payload["duration_seconds"]),
+            valve=valve,
+            origin=origin,
+            clock=self.clock,
+            policy=self.policy,
+        )
+        self.state.session = session
+        self.save()
+
+        self.emit("session.started", self.status())
+        log.info(
+            "session %s started: profile=%s level=%s duration=%.0fs",
+            session.id,
+            session.profile,
+            session.level,
+            session.anchor.duration_seconds,
+        )
+        return request.ok(self.status())
+
+    def _on_extend(self, request: Request) -> Response:
+        session = self._require_session()
+        self.state.session = session.extended_by(float(request.payload["by_seconds"]))
+        self.save()
+        self.emit("session.extended", self.status())
+        return request.ok(self.status())
+
+    def _on_cancel(self, request: Request) -> Response:
+        session = self._require_session()
+        typed = request.payload.get("typed")
+
+        if session.exit_request is None:
+            self.state.session = session.request_exit(
+                ExitKind.CANCEL, clock=self.clock, policy=self.policy
+            )
+            self.save()
+            return request.ok(self.status())
+
+        return self._try_complete(request, session, typed)
+
+    def _on_valve_request(self, request: Request) -> Response:
+        session = self._require_session()
+        if session.exit_request is not None:
+            return request.ok(self.status())
+
+        self.state.session = session.request_exit(
+            ExitKind.VALVE, clock=self.clock, policy=self.policy
+        )
+        self.save()
+        self.emit("valve.requested", self.status())
+        return request.ok(self.status())
+
+    def _on_valve_phrase(self, request: Request) -> Response:
+        session = self._require_session()
+        return self._try_complete(request, session, str(request.payload["text"]))
+
+    def _on_withdraw(self, request: Request) -> Response:
+        session = self._require_session()
+        if session.exit_request is None:
+            raise AnchorError("there is nothing to withdraw", code=ErrorCode.VALVE_NOT_REQUESTED)
+        self.state.session = session.withdraw_exit()
+        self.save()
+        self.emit("valve.withdrawn", self.status())
+        return request.ok(self.status())
+
+    def _try_complete(self, request: Request, session: Session, typed: str | None) -> Response:
+        pending = session.exit_request
+        outcome = session.complete_exit(clock=self.clock, typed=typed)
+        if outcome.rupture is not None:
+            self._store_rupture(outcome.rupture)
+        self._end_session(reason=str(pending.kind) if pending else "cancel")
+        return request.ok({"ended": outcome.ended, **self.status()})
+
+    # -- helpers --------------------------------------------------------
+
+    def _require_session(self) -> Session:
+        self.tick()
+        session = self.state.session
+        if session is None:
+            raise AnchorError("no session is running", code=ErrorCode.NO_ACTIVE_SESSION)
+        return session
+
+    def _end_session(self, *, reason: str) -> None:
+        session = self.state.session
+        if session is None:
+            return
+        self.state.session = None
+        self.save()
+        log.info("session %s ended: %s", session.id, reason)
+        self.emit(
+            "session.ended",
+            {"session_id": session.id, "profile": session.profile, "reason": reason},
+        )
+
+    def _record_rupture(self, kind: RuptureKind, detail: str) -> None:
+        self._store_rupture(Rupture(kind=kind, at=self.clock.wall(), detail=detail))
+
+    def _store_rupture(self, rupture: Rupture) -> None:
+        self.state.ruptures.append(rupture.to_dict())
+        self.save()
+        log.warning("rupture recorded: %s (%s)", rupture.kind, rupture.detail)
+        self.emit("rupture.recorded", rupture.to_dict())
+
+
+def _as_kwargs(session: Session) -> dict[str, Any]:
+    return {
+        "id": session.id,
+        "profile": session.profile,
+        "level": session.level,
+        "origin": session.origin,
+        "anchor": session.anchor,
+        "valve": session.valve,
+        "phase": session.phase,
+        "exit_request": session.exit_request,
+        "blocked_attempts": session.blocked_attempts,
+        "ruptures": session.ruptures,
+    }

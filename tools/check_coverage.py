@@ -14,11 +14,18 @@ from pathlib import Path
 
 TARGET = 80.0
 
-# Modules the specification puts under the coverage target.
-GATED_PREFIXES = (
+# Modules the specification puts under the coverage target. Coverage reports
+# paths relative to the project root, which may or may not carry the src/
+# prefix depending on how it was invoked, so both spellings are accepted.
+GATED_SUFFIXES = (
     "anchor/engine/",
     "anchor/protocol/",
 )
+
+
+def _is_gated(filename: str) -> bool:
+    normalised = filename.replace("\\", "/").removeprefix("./").removeprefix("src/")
+    return normalised.startswith(GATED_SUFFIXES)
 
 
 def main() -> int:
@@ -33,7 +40,7 @@ def main() -> int:
     total = 0
     for cls in root.iter("class"):
         filename = cls.get("filename", "")
-        if not filename.startswith(GATED_PREFIXES):
+        if not _is_gated(filename):
             continue
         for line in cls.iter("line"):
             total += 1
@@ -41,8 +48,10 @@ def main() -> int:
                 covered += 1
 
     if total == 0:
-        print("no gated modules found; nothing to check")
-        return 0
+        # Silently passing here would hide the engine going untested, which is
+        # the one thing this check exists to prevent.
+        print("FAILED: no engine modules found in the coverage report")
+        return 1
 
     percent = 100.0 * covered / total
     status = "OK" if percent >= TARGET else "FAILED"
