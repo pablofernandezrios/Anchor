@@ -1,0 +1,32 @@
+Source: anchor
+Section: utils
+Priority: optional
+Maintainer: Pablo Fernández Ríos <fernandezriospablo06@gmail.com>
+Build-Depends: debhelper-compat (= 13), dh-python, python3-all (>= 3.12), python3-setuptools
+Standards-Version: 4.7.0
+Homepage: https://github.com/pablofernandezrios/anchor
+Rules-Requires-Root: no
+
+Package: anchor
+Architecture: all
+Depends: ${python3:Depends},
+         ${misc:Depends},
+         python3 (>= 3.12),
+         nftables,
+         systemd
+Recommends: gir1.2-gtk-4.0,
+            gir1.2-adw-1,
+            python3-gi,
+            gir1.2-ayatanaappindicator3-0.1
+Suggests: gnome-shell-extension-appindicator
+Description: Focus tool that blocks websites and applications
+ Anchor blocks websites and applications during focus sessions, enforces
+ breaks, and runs sessions on weekly schedules. A block cannot be undone in a
+ moment of weakness: leaving early costs time and effort, and every escape is
+ recorded.
+ .
+ Anchor provides friction, not guarantees. Anyone with root on the machine can
+ defeat it; the goal is that doing so is tedious and leaves a record.
+ .
+ The graphical interface needs GTK4 and libadwaita, which are recommended
+ rather than required so that a server install stays small.

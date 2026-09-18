@@ -1,0 +1,45 @@
+#!/bin/sh
+# Install-time setup (SPEC 17).
+set -e
+
+case "$1" in
+  configure)
+    mkdir -p /etc/anchor /var/lib/anchor
+    chmod 0750 /var/lib/anchor
+
+    # Record who may give the engine orders besides root (SPEC 5.2). The owner
+    # is the user running the install, not the root it runs as: on a desktop
+    # that is whoever typed sudo.
+    if [ ! -f /etc/anchor/anchor.toml ]; then
+      owner_uid="${PKEXEC_UID:-}"
+      if [ -z "$owner_uid" ] && [ -n "${SUDO_UID:-}" ]; then
+        owner_uid="$SUDO_UID"
+      fi
+      if [ -z "$owner_uid" ]; then
+        # No one to attribute it to: leave it unset rather than guessing, and
+        # let `anchor doctor` say what to do. Guessing here would either lock
+        # the owner out or let the wrong account in.
+        echo "anchor: could not determine the desktop user." >&2
+        echo "anchor: set install.owner_uid in /etc/anchor/anchor.toml, then:" >&2
+        echo "anchor:   systemctl restart anchord" >&2
+      else
+        cat > /etc/anchor/anchor.toml <<TOML
+# Anchor install-level settings (SPEC 6.1).
+# Written when the package was installed. Safe to edit by hand.
+
+[install]
+# The user allowed to give the engine orders, besides root.
+owner_uid = $owner_uid
+
+[statistics]
+# How long statistics are kept, in days.
+retention_days = 90
+TOML
+        chmod 0644 /etc/anchor/anchor.toml
+      fi
+    fi
+    ;;
+esac
+
+#DEBHELPER#
+exit 0

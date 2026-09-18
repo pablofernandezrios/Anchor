@@ -1,0 +1,16 @@
+#!/usr/bin/make -f
+# Skeleton. Milestone 9 completes the build.
+
+export PYBUILD_NAME=anchor
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@ --with python3 --buildsystem=pybuild
+
+override_dh_installsystemd:
+	dh_installsystemd --name=anchord
+	dh_installsystemd --name=anchor-blockerd
+
+override_dh_auto_test:
+	# Only the tests that need neither root, systemd nor a display.
+	python3 -m pytest -m "not needs_root and not needs_systemd and not needs_display"

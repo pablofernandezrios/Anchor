@@ -1,0 +1,50 @@
+# Skeleton. Milestone 9 completes the build and the AUR submission.
+# Maintainer: Pablo Fernández Ríos <fernandezriospablo06@gmail.com>
+
+pkgname=anchor
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Focus tool that blocks websites and applications"
+arch=('any')
+url="https://github.com/pablofernandezrios/anchor"
+license=('MIT')
+depends=('python>=3.12' 'nftables' 'systemd')
+optdepends=(
+  'gtk4: graphical interface'
+  'libadwaita: graphical interface'
+  'python-gobject: graphical interface'
+  'libayatana-appindicator: top-bar indicator'
+  'gnome-shell-extension-appindicator: top-bar indicator on GNOME'
+)
+makedepends=('python-build' 'python-installer' 'python-setuptools' 'python-wheel')
+checkdepends=('python-pytest')
+backup=('etc/anchor/anchor.toml')
+install=anchor.install
+source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$pkgname-$pkgver"
+  python -m build --wheel --no-isolation
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  # Only the tests that need neither root, systemd nor a display.
+  python -m pytest -m "not needs_root and not needs_systemd and not needs_display"
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  python -m installer --destdir="$pkgdir" dist/*.whl
+
+  install -Dm644 packaging/systemd/anchord.service "$pkgdir/usr/lib/systemd/system/anchord.service"
+  install -Dm644 packaging/systemd/anchor-blockerd.service "$pkgdir/usr/lib/systemd/system/anchor-blockerd.service"
+  install -Dm644 packaging/systemd/anchor-agent.service "$pkgdir/usr/lib/systemd/user/anchor-agent.service"
+
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+
+  install -dm755 "$pkgdir/etc/anchor"
+  install -dm750 "$pkgdir/var/lib/anchor"
+}

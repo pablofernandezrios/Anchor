@@ -1,0 +1,24 @@
+#!/bin/sh
+# Removal must restore the system, whether or not a session is active
+# (SPEC 7.6). Uninstalling is always allowed.
+set -e
+
+case "$1" in
+  remove|deconfigure)
+    # Runtime drop-ins that refuse a manual stop would otherwise keep the
+    # services from being stopped during removal (SPEC 5.3).
+    rm -f /run/systemd/system/anchord.service.d/anchor-session.conf
+    rm -f /run/systemd/system/anchor-blockerd.service.d/anchor-session.conf
+    rmdir --ignore-fail-on-non-empty \
+      /run/systemd/system/anchord.service.d \
+      /run/systemd/system/anchor-blockerd.service.d 2>/dev/null || true
+    systemctl daemon-reload || true
+
+    # Milestone 2 adds the DNS, nftables and browser-policy restoration here,
+    # through `anchor-blockerd --restore`. Milestone 1 installs none of that,
+    # so there is nothing further to undo yet.
+    ;;
+esac
+
+#DEBHELPER#
+exit 0
