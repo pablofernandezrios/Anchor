@@ -27,7 +27,7 @@ a change can be refused.
 | Component | Binary | Runs as | Status |
 |---|---|---|---|
 | Engine | `anchord` | root, system service | Implemented (Milestone 1) |
-| Blocker | `anchor-blockerd` | root, system service | Stub; Milestones 2 and 4 |
+| Blocker | `anchor-blockerd` | root, system service | Web blocking done (Milestone 2); applications in Milestone 4 |
 | Agent and indicator | `anchor-agent` | the owner, user service | Milestone 5. Speaks StatusNotifierItem over D-Bus, no AppIndicator library ([ADR 3](adr/0003-speak-statusnotifieritem-over-dbus.md)) |
 | Interface | `anchor-gui` | the owner | Milestone 8 |
 | Command line | `anchor` | any allowed user | `status`, `start`, `extend`, `cancel`, `valve` |
@@ -39,7 +39,9 @@ src/anchor/
   protocol/    types, error codes, schema validation, message envelopes
   engine/      paths, store, timekeeping, sessions, ratchet, profiles,
                phrases, state, core, service, main
-  blocker/     stub
+  blocker/     journal, restore, constants, commands, dnswire, matcher,
+               recent, attempts, resolver, rules, resolved, policies,
+               daemon, main
   agent/       empty
   gui/         empty
   cli/         durations, client, main
@@ -143,6 +145,60 @@ does not satisfy one.
 inverts for allowlists: there the list names what stays reachable, so adding an
 entry opens a site and removing one closes it. Handling both directions with
 one rule is what stops an allowlist session being unwound one entry at a time.
+
+## Web blocking
+
+Four mechanisms, layered, because any one of them alone has a way around it.
+
+**The firewall is the universal one.** `nft` loads a single table, `inet
+anchor`, whose first rule returns on Anchor's own mark and whose second
+redirects every UDP and TCP query on port 53 to Anchor's resolver. It catches
+every process regardless of what `/etc/resolv.conf` says, so blocking works on
+a machine with no systemd-resolved at all. The mark exemption has to be first,
+or the resolver's own forwarded queries come straight back to it; `SO_MARK`
+needs `CAP_NET_ADMIN`, so no ordinary process can claim it.
+
+**The resolver decides.** It reads only the question, answers `NXDOMAIN` for a
+blocked name so the browser shows its ordinary error page, and forwards
+everything else as bytes. When no upstream answers it says `SERVFAIL` rather
+than `NXDOMAIN`, because claiming a name does not exist is a lie clients cache.
+The one thing it reads out of an answer is the address records, for the
+short-lived map below.
+
+**systemd-resolved is pointed at Anchor** where it exists, per link with a `~.`
+routing domain and a runtime drop-in as backstop. That saves a hop, and
+`Cache=no` stops a domain blocked mid-session from resolving out of the cache.
+Where resolved does not exist, upstreams come from `/etc/resolv.conf`. Anchor
+refuses to redirect DNS when it can find no upstream at all: a redirect with
+nowhere to forward is a total loss of name resolution, far worse than not
+blocking, and indistinguishable from it to the user.
+
+**Encrypted DNS is closed off.** Managed policies disable DoH in Firefox and
+the Chromium family, and the firewall rejects DNS over TLS and the shipped DoH
+endpoints on both TCP and UDP 443. The policies only apply when a browser
+starts, so the firewall is what covers a browser already running.
+
+Addresses resolved just before a session started are rejected for its duration,
+from a bounded in-memory map that expires on its own and is emptied when the
+session ends. Without it, a page already open keeps loading.
+
+`tests/system/leak_test.py` proves all five routes in SPEC 8.4 are closed, on a
+real machine, on every push.
+
+### Fail-open, concretely
+
+Nothing that can break networking outlives Anchor.
+
+- With no session there are no rules at all, so an idle blocker that dies
+  cannot take the network with it.
+- During a session the rules stay in the kernel even if the daemon dies, so
+  traffic stays blocked until systemd restarts it (P4).
+- The resolved drop-in lives in `/run`, so a reboot clears it. Per-link DNS is
+  runtime state for the same reason.
+- Everything Anchor writes goes through a journal that records what was there
+  before, and `anchor-blockerd --restore` puts it all back. The journal is
+  unsigned on purpose: uninstalling is always allowed, and an integrity check
+  could only refuse to give someone their machine back.
 
 ## Not built yet
 

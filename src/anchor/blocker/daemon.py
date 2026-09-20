@@ -24,7 +24,7 @@ from pathlib import Path
 
 from anchor.blocker.attempts import AttemptTracker
 from anchor.blocker.commands import Runner, run
-from anchor.blocker.constants import JOURNAL_NAME, RESOLVER_PORT
+from anchor.blocker.constants import JOURNAL_NAME, RESOLVED_DROP_IN, RESOLVER_PORT
 from anchor.blocker.journal import Journal
 from anchor.blocker.matcher import Policy, load_domain_file
 from anchor.blocker.policies import apply_policies
@@ -92,12 +92,14 @@ class BlockerDaemon:
         runner: Runner = run,
         resolver_port: int = RESOLVER_PORT,
         policy_root: Path | None = None,
+        resolved_drop_in: Path = RESOLVED_DROP_IN,
     ) -> None:
         self.paths = paths
         self.lists = lists if lists is not None else Lists.load()
         self.runner = runner
         self.resolver_port = resolver_port
         self.policy_root = policy_root
+        self.resolved_drop_in = resolved_drop_in
 
         self.journal = Journal(paths.state_dir / JOURNAL_NAME)
         self.recent = RecentAnswers()
@@ -249,7 +251,10 @@ class BlockerDaemon:
 
         if is_available(runner=self.runner):
             self._network = apply_resolved(
-                self.journal, runner=self.runner, resolver_port=self.resolver_port
+                self.journal,
+                runner=self.runner,
+                resolver_port=self.resolver_port,
+                drop_in=self.resolved_drop_in,
             )
             if self._resolver is not None:
                 self._resolver.set_upstreams(self._network.upstreams)
@@ -267,7 +272,9 @@ class BlockerDaemon:
 
     def undo(self) -> None:
         """Put everything back when the session ends."""
-        report = restore_everything(self.journal, runner=self.runner)
+        report = restore_everything(
+            self.journal, runner=self.runner, resolved_drop_in=self.resolved_drop_in
+        )
 
         with self._lock:
             self._policy = None
@@ -289,6 +296,7 @@ class BlockerDaemon:
             self._network,
             runner=self.runner,
             resolver_port=self.resolver_port,
+            drop_in=self.resolved_drop_in,
         )
         if updated is not None:
             self._network = updated

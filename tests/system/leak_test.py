@@ -85,7 +85,8 @@ def dns_query(name: str) -> bytes:
 def rcode_of(packet: bytes) -> int:
     import struct
 
-    return struct.unpack(">H", packet[2:4])[0] & 0x000F
+    flags: int = struct.unpack(">H", packet[2:4])[0]
+    return flags & 0x000F
 
 
 # -- the five ways around ---------------------------------------------------

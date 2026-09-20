@@ -50,6 +50,10 @@ def daemon(paths: Paths, lists: Lists, runner: RecordingRunner, tmp_path: Path) 
         runner=runner,
         resolver_port=5391,
         policy_root=tmp_path / "root",
+        # Every path the daemon writes is redirected here. Without this the
+        # tests write to the real /run/systemd, which passes as root and fails
+        # for everyone else.
+        resolved_drop_in=tmp_path / "run" / "systemd" / "resolved.conf.d" / "50-anchor.conf",
     )
 
 
@@ -131,7 +135,13 @@ class TestWithoutAnUpstream:
         monkeypatch.setattr(resolved_module, "RESOLV_CONF", empty)
 
         runner = RecordingRunner({"resolvectl": Result(code=127, err="not found")})
-        daemon = BlockerDaemon(paths, lists=lists, runner=runner, resolver_port=5391)
+        daemon = BlockerDaemon(
+            paths,
+            lists=lists,
+            runner=runner,
+            resolver_port=5391,
+            resolved_drop_in=tmp_path / "run" / "50-anchor.conf",
+        )
 
         daemon.apply(WebMode.BLOCKLIST, frozenset({"youtube.com"}))
 
@@ -148,7 +158,13 @@ class TestWithoutAnUpstream:
         monkeypatch.setattr(resolved_module, "RESOLV_CONF", conf)
 
         runner = RecordingRunner({"resolvectl": Result(code=127, err="not found")})
-        daemon = BlockerDaemon(paths, lists=lists, runner=runner, resolver_port=5391)
+        daemon = BlockerDaemon(
+            paths,
+            lists=lists,
+            runner=runner,
+            resolver_port=5391,
+            resolved_drop_in=tmp_path / "run" / "50-anchor.conf",
+        )
 
         daemon.apply(WebMode.BLOCKLIST, frozenset({"youtube.com"}))
 

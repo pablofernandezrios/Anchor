@@ -21,5 +21,16 @@ this project follows [Semantic Versioning](https://semver.org/).
 - `anchor status` and `anchor start` in Soft mode, without real blocking
   (SPEC 15).
 - Milestone 0 technical spikes and their findings (`docs/spikes/`).
+- Web blocking: a forwarding DNS resolver, nftables redirection exempting the
+  resolver, systemd-resolved integration that follows network changes, blocklist
+  and allowlist modes with a shipped essentials list, managed browser policies
+  disabling DNS-over-HTTPS, rejection of addresses resolved before a session, and
+  blocked-site notifications limited to one per domain every ten minutes
+  (SPEC 8).
+- Full restoration of DNS, firewall rules and browser policies, whether or not a
+  session is active, through `anchor-blockerd --restore` (SPEC 7.6).
+- Leak tests proving a blocked domain cannot be reached through plain DNS, a
+  public resolver, DNS over TLS, a shipped DoH endpoint or a cached address
+  (SPEC 8.4).
 
 [Unreleased]: https://github.com/pablofernandezrios/anchor/commits/main
