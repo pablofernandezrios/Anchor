@@ -41,6 +41,14 @@ class FirewallPlan:
     mark: int = ANCHOR_MARK
     doh_v4: list[str] = field(default_factory=list)
     doh_v6: list[str] = field(default_factory=list)
+    blocked_v4: list[str] = field(default_factory=list)
+    blocked_v6: list[str] = field(default_factory=list)
+    """Addresses of names this session blocks, from the recent-answer map.
+
+    Blocking DNS does nothing for a page already open: the address is known and
+    the connection made. Rejecting these closes that door (SPEC 8.2).
+    """
+
     block_dot: bool = True
 
 
@@ -84,6 +92,22 @@ def build_ruleset(plan: FirewallPlan) -> str:
             f"        elements = {{ {', '.join(plan.doh_v6)} }}",
             "    }",
         ]
+    if plan.blocked_v4:
+        lines += [
+            "    set blocked_v4 {",
+            "        type ipv4_addr",
+            "        flags interval",
+            f"        elements = {{ {', '.join(plan.blocked_v4)} }}",
+            "    }",
+        ]
+    if plan.blocked_v6:
+        lines += [
+            "    set blocked_v6 {",
+            "        type ipv6_addr",
+            "        flags interval",
+            f"        elements = {{ {', '.join(plan.blocked_v6)} }}",
+            "    }",
+        ]
 
     # Redirect every DNS query to Anchor's resolver.
     lines += [
@@ -118,6 +142,15 @@ def build_ruleset(plan: FirewallPlan) -> str:
             "        ip6 daddr @doh_v6 tcp dport 443 reject with tcp reset",
             "        ip6 daddr @doh_v6 udp dport 443 drop",
         ]
+    if plan.blocked_v4:
+        filter_rules += [
+            "        # Addresses of blocked names that were resolved before the",
+            "        # session began. Rejecting rather than dropping so an open",
+            "        # page fails at once instead of hanging.",
+            "        ip daddr @blocked_v4 reject",
+        ]
+    if plan.blocked_v6:
+        filter_rules += ["        ip6 daddr @blocked_v6 reject"]
 
     if filter_rules:
         lines += [
@@ -169,9 +202,11 @@ def apply_rules(plan: FirewallPlan, journal: Journal, *, runner: Runner = run) -
         raise RuleLoadError(f"nftables refused the ruleset: {result.text}")
 
     log.info(
-        "firewall rules loaded: DNS redirected to port %d, %d DoH endpoint(s) blocked",
+        "firewall rules loaded: DNS redirected to port %d, %d DoH endpoint(s) and "
+        "%d already-resolved address(es) blocked",
         plan.resolver_port,
         len(plan.doh_v4) + len(plan.doh_v6),
+        len(plan.blocked_v4) + len(plan.blocked_v6),
     )
 
 

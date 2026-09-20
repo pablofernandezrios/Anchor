@@ -53,10 +53,20 @@ class FakeUpstream:
             except OSError:
                 break
             self.seen.append(packet)
-            # A response: same id, QR set, no error, plus a marker.
-            ident = packet[:2]
-            reply = ident + struct.pack(">HHHHH", 0x8180, 1, 1, 0, 0)
-            self._sock.sendto(reply + packet[12:] + CANNED_ANSWER_MARKER, client)
+            self._sock.sendto(self._answer(packet), client)
+
+    ANSWER_ADDRESS = "203.0.113.7"
+
+    def _answer(self, query: bytes) -> bytes:
+        """A real answer: the question echoed, then one A record."""
+        question = query[12:]
+        header = query[:2] + struct.pack(">HHHHH", 0x8180, 1, 1, 0, 0)
+        record = (
+            b"\xc0\x0c"  # a compression pointer back to the question's name
+            + struct.pack(">HHIH", 1, 1, 300, 4)
+            + bytes(int(part) for part in self.ANSWER_ADDRESS.split("."))
+        )
+        return header + question + record + CANNED_ANSWER_MARKER
 
     def __enter__(self) -> FakeUpstream:
         self._thread.start()
@@ -239,3 +249,31 @@ class TestWhenUpstreamIsGone:
         harness.resolver.set_upstreams([])
 
         assert rcode(harness.ask("example.com")) == 2
+
+
+class TestRememberingAnswers:
+    def test_the_address_behind_a_name_is_remembered(self, harness: Harness) -> None:
+        """SPEC 8.2: a page open before the session must stop loading."""
+        harness.ask("example.com")
+
+        remembered = harness.resolver.recent.addresses_for(lambda n: n == "example.com")
+        assert remembered == [FakeUpstream.ANSWER_ADDRESS]
+
+    def test_those_addresses_become_firewall_rules(self, harness: Harness) -> None:
+        """This is the whole point of remembering them."""
+        from anchor.blocker.rules import FirewallPlan, build_ruleset, split_addresses
+
+        harness.ask("youtube.com")
+        blocked = harness.resolver.recent.addresses_for(lambda n: n == "youtube.com")
+        v4, v6 = split_addresses(blocked)
+
+        ruleset = build_ruleset(FirewallPlan(blocked_v4=v4, blocked_v6=v6))
+        assert FakeUpstream.ANSWER_ADDRESS in ruleset
+        assert "ip daddr @blocked_v4 reject" in ruleset
+
+    def test_a_blocked_name_is_not_remembered(self, harness: Harness) -> None:
+        """It never went upstream, so there is no answer to remember."""
+        harness.policy = Policy(WebMode.BLOCKLIST, frozenset({"youtube.com"}))
+        harness.ask("youtube.com")
+
+        assert len(harness.resolver.recent) == 0

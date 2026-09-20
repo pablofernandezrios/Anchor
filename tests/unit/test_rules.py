@@ -135,3 +135,26 @@ class TestApplying:
 
         with pytest.raises(RuleLoadError, match="syntax error"):
             apply_rules(FirewallPlan(), journal, runner=runner)
+
+
+class TestRejectingAlreadyResolvedAddresses:
+    def test_blocked_addresses_are_rejected(self) -> None:
+        """A page open before the session started must stop loading (SPEC 8.2)."""
+        ruleset = build_ruleset(FirewallPlan(blocked_v4=["142.250.1.1"]))
+
+        assert "set blocked_v4" in ruleset
+        assert "ip daddr @blocked_v4 reject" in ruleset
+
+    def test_ipv6_too(self) -> None:
+        ruleset = build_ruleset(FirewallPlan(blocked_v6=["2a00:1450::1"]))
+        assert "ip6 daddr @blocked_v6 reject" in ruleset
+
+    def test_nothing_resolved_means_no_set(self) -> None:
+        ruleset = build_ruleset(FirewallPlan())
+        assert "blocked_v4" not in ruleset
+
+    def test_rejecting_not_dropping(self) -> None:
+        """A dropped packet leaves the page spinning; a reject fails it at once."""
+        ruleset = build_ruleset(FirewallPlan(blocked_v4=["1.2.3.4"]))
+        assert "@blocked_v4 reject" in ruleset
+        assert "@blocked_v4 drop" not in ruleset

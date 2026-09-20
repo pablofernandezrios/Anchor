@@ -12,10 +12,12 @@ into itself. Milestone 0 spike 2 established that setting the mark needs
 ``CAP_NET_ADMIN``, which is why an ordinary process cannot claim the exemption
 by pretending to be the resolver.
 
-**No answer parsing.** A reply is forwarded as bytes. The less of a remote
-server's packet Anchor interprets, the less there is to get wrong. The map of
-recent answers that SPEC 8.2 needs for dropping open connections arrives with
-that feature, and will parse only the address records it needs.
+**Answers are forwarded as bytes.** A reply is never rewritten; the less of a
+remote server's packet Anchor interprets, the less there is to get wrong. The
+one thing read out of an answer is its address records, for the short-lived map
+SPEC 8.2 needs so that a session can reject addresses resolved just before it
+started. That parser yields what it understood rather than raising, because the
+caller is building a blocklist, not trusting the packet.
 
 **No domain ever reaches the log.** The working rules forbid logging visited
 domains outside the statistics database, so blocked names go to a callback the
@@ -37,10 +39,12 @@ from anchor.blocker.dnswire import (
     MalformedMessageError,
     is_query,
     nxdomain_response,
+    parse_addresses,
     question_name,
     servfail_response,
 )
 from anchor.blocker.matcher import Policy
+from anchor.blocker.recent import RecentAnswers
 
 log = logging.getLogger("anchor-blockerd")
 
@@ -84,10 +88,12 @@ class Resolver:
         *,
         policy: PolicyProvider,
         on_blocked: BlockedHandler | None = None,
+        recent: RecentAnswers | None = None,
     ) -> None:
         self._config = config
         self._policy = policy
         self._on_blocked = on_blocked
+        self.recent = recent if recent is not None else RecentAnswers()
         self._stopping = threading.Event()
         self._threads: list[threading.Thread] = []
         self._udp: socket.socket | None = None
@@ -242,7 +248,20 @@ class Resolver:
                     log.exception("the blocked-attempt handler raised")
             return nxdomain_response(packet)
 
-        return self._forward(packet, over_tcp=over_tcp)
+        reply = self._forward(packet, over_tcp=over_tcp)
+        self._remember(name, reply)
+        return reply
+
+    def _remember(self, name: str, reply: bytes) -> None:
+        """Note what a name resolved to, for rejecting it later (SPEC 8.2).
+
+        Held in memory only, expiring on its own, and emptied when a session
+        ends. It is never written anywhere, because it is a record of what the
+        user looked at.
+        """
+        addresses = parse_addresses(reply)
+        if addresses:
+            self.recent.record(name, addresses)
 
     # -- forwarding ------------------------------------------------------
 

@@ -140,3 +140,87 @@ def nxdomain_response(query: bytes) -> bytes:
 def servfail_response(query: bytes) -> bytes:
     """Build the answer for a query no upstream would take."""
     return _refusal(query, SERVFAIL)
+
+
+#: Record types carrying an address.
+TYPE_A: Final = 1
+TYPE_AAAA: Final = 28
+
+#: A cap on how many names a single message may make us walk, so a malicious
+#: reply cannot spin the parser.
+_MAX_RECORDS: Final = 64
+
+
+def _skip_name(packet: bytes, offset: int) -> int:
+    """Return the offset just past the name starting at ``offset``.
+
+    Names in an answer may be compressed into a pointer to somewhere earlier in
+    the message. The pointer is not followed here: nothing needs the name, only
+    where it ends, and following pointers is how a parser gets led in a circle.
+    """
+    steps = 0
+    while offset < len(packet):
+        length = packet[offset]
+        if length == 0:
+            return offset + 1
+        if length & _POINTER_MASK:
+            # A pointer is two bytes and always ends the name.
+            return offset + 2
+        offset += length + 1
+        steps += 1
+        if steps > _MAX_RECORDS:
+            raise MalformedMessageError("a name in the message does not end")
+    raise MalformedMessageError("a name runs past the end of the message")
+
+
+def parse_addresses(packet: bytes) -> list[str]:
+    """Read the IPv4 and IPv6 addresses out of an answer (SPEC 8.2).
+
+    Used for the short-lived map of recent answers, so that when a session
+    starts Anchor can reject the addresses of names it now blocks, and a page
+    already open cannot keep loading from a connection made moments earlier.
+
+    Only address records are read. Anything malformed yields what was
+    understood so far rather than raising: a partly readable answer is still
+    worth the addresses it did contain, and the caller is building a blocklist,
+    not trusting the packet.
+    """
+    import ipaddress
+
+    if len(packet) < _HEADER_SIZE:
+        return []
+
+    _, _, qdcount, ancount, _, _ = _HEADER.unpack_from(packet)
+    if ancount == 0:
+        return []
+
+    offset = _HEADER_SIZE
+    addresses: list[str] = []
+
+    try:
+        # Step over the questions.
+        for _ in range(min(qdcount, _MAX_RECORDS)):
+            offset = _skip_name(packet, offset) + 4
+
+        for _ in range(min(ancount, _MAX_RECORDS)):
+            offset = _skip_name(packet, offset)
+            if offset + 10 > len(packet):
+                break
+            rtype, _rclass, _ttl, rdlength = struct.unpack_from(">HHIH", packet, offset)
+            offset += 10
+
+            if offset + rdlength > len(packet):
+                break
+
+            data = packet[offset : offset + rdlength]
+            offset += rdlength
+
+            if rtype == TYPE_A and rdlength == 4:
+                addresses.append(str(ipaddress.IPv4Address(data)))
+            elif rtype == TYPE_AAAA and rdlength == 16:
+                addresses.append(str(ipaddress.IPv6Address(data)))
+    except (MalformedMessageError, struct.error, ValueError):
+        # Whatever was read before the damage is still usable.
+        return addresses
+
+    return addresses

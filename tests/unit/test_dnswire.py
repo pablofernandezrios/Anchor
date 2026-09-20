@@ -143,3 +143,72 @@ class TestRefusing:
     def test_refusing_rubbish_raises_rather_than_guessing(self) -> None:
         with pytest.raises(MalformedMessageError):
             nxdomain_response(b"\x01\x02")
+
+
+class TestReadingAddressesFromAnswers:
+    @staticmethod
+    def answer(name: str, records: list[tuple[int, bytes]]) -> bytes:
+        labels = b"".join(bytes([len(p)]) + p.encode() for p in name.split(".") if p) + b"\x00"
+        header = struct.pack(">HHHHHH", 1, 0x8180, 1, len(records), 0, 0)
+        body = labels + struct.pack(">HH", 1, 1)
+        for rtype, data in records:
+            # A compression pointer back to the question's name, as a real
+            # server sends.
+            body += b"\xc0\x0c" + struct.pack(">HHIH", rtype, 1, 300, len(data)) + data
+        return header + body
+
+    def test_an_ipv4_address_is_read(self) -> None:
+        from anchor.blocker.dnswire import parse_addresses
+
+        packet = self.answer("example.com", [(1, bytes([93, 184, 216, 34]))])
+        assert parse_addresses(packet) == ["93.184.216.34"]
+
+    def test_an_ipv6_address_is_read(self) -> None:
+        from anchor.blocker.dnswire import parse_addresses
+
+        raw = bytes.fromhex("2606280000000000000000000000c0d0")
+        assert parse_addresses(self.answer("example.com", [(28, raw)])) == ["2606:2800::c0d0"]
+
+    def test_several_addresses_come_back_in_order(self) -> None:
+        from anchor.blocker.dnswire import parse_addresses
+
+        packet = self.answer(
+            "example.com",
+            [(1, bytes([1, 2, 3, 4])), (1, bytes([5, 6, 7, 8]))],
+        )
+        assert parse_addresses(packet) == ["1.2.3.4", "5.6.7.8"]
+
+    def test_other_record_types_are_skipped(self) -> None:
+        from anchor.blocker.dnswire import parse_addresses
+
+        cname = b"\x03www\x07example\x03com\x00"
+        packet = self.answer("example.com", [(5, cname), (1, bytes([9, 9, 9, 9]))])
+        assert parse_addresses(packet) == ["9.9.9.9"]
+
+    def test_a_query_has_no_addresses(self) -> None:
+        from anchor.blocker.dnswire import parse_addresses
+
+        assert parse_addresses(query("example.com")) == []
+
+    def test_rubbish_yields_nothing_rather_than_raising(self) -> None:
+        from anchor.blocker.dnswire import parse_addresses
+
+        for packet in (b"", b"\x00\x01", b"\xff" * 40):
+            assert parse_addresses(packet) == []
+
+    def test_a_truncated_record_keeps_what_was_read(self) -> None:
+        from anchor.blocker.dnswire import parse_addresses
+
+        packet = self.answer(
+            "example.com",
+            [(1, bytes([1, 2, 3, 4])), (1, bytes([5, 6, 7, 8]))],
+        )
+        assert parse_addresses(packet[:-3]) == ["1.2.3.4"]
+
+    def test_a_lying_answer_count_does_not_spin_the_parser(self) -> None:
+        from anchor.blocker.dnswire import parse_addresses
+
+        packet = self.answer("example.com", [(1, bytes([1, 2, 3, 4]))])
+        lying = packet[:6] + struct.pack(">H", 9999) + packet[8:]
+
+        assert parse_addresses(lying) == ["1.2.3.4"]
