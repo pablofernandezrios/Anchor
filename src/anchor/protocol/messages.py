@@ -92,6 +92,10 @@ REQUEST_SCHEMAS: Final[dict[str, Schema]] = {
     # Spoken by anchor-blockerd rather than by a person.
     "policy.get": EMPTY,
     "blocked.report": Schema(domain=Field(str), rule=Field(str)),
+    "tamper.report": Schema(
+        kind=Field(str, choices=("rules_missing", "resolver_bypassed", "policy_removed")),
+        detail=Field(str),
+    ),
     "stats.query": Schema(
         range=Field(str, choices=("day", "week", "month"), required=False, default="week"),
     ),

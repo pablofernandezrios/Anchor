@@ -217,6 +217,7 @@ class Engine:
             "profile.delete": self._on_profile_delete,
             "policy.get": self._on_policy,
             "blocked.report": self._on_blocked_report,
+            "tamper.report": self._on_tamper_report,
         }
 
     # -- profiles ---------------------------------------------------------
@@ -377,6 +378,20 @@ class Engine:
         # written to the log (SPEC 13).
         self.emit("blocked.attempt", {"domain": domain, "rule": rule})
         return request.ok({"recorded": True, "total": self.state.session.blocked_attempts})
+
+    def _on_tamper_report(self, request: Request) -> Response:
+        """Record manipulation the blocker noticed (SPEC 7.6).
+
+        The blocker puts the rules back itself, because it is the one holding
+        them and waiting for an instruction would leave the machine unblocked
+        in the meantime. What it cannot do is decide what the event means, so
+        it reports, and the engine writes the rupture.
+        """
+        kind = str(request.payload["kind"])
+        detail = str(request.payload["detail"])
+
+        self._record_rupture(RuptureKind.TAMPERING, f"{kind}: {detail}")
+        return request.ok({"recorded": True})
 
     def _on_status(self, request: Request) -> Response:
         self.tick()

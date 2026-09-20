@@ -41,6 +41,7 @@ from anchor.blocker.rules import (
     FirewallPlan,
     apply_rules,
     load_addresses,
+    rules_loaded,
     split_addresses,
 )
 from anchor.cli.client import EngineClient, EngineUnreachableError
@@ -190,12 +191,42 @@ class BlockerDaemon:
 
         active = bool(response.result.get("active"))
         if active:
+            self.check_rules_survive()
             self.apply(
                 WebMode(response.result.get("mode", WebMode.BLOCKLIST)),
                 frozenset(response.result.get("domains", ())),
             )
         elif self._applied:
             self.undo()
+
+    def check_rules_survive(self) -> None:
+        """Notice if Anchor's firewall table has been removed (SPEC 7.6).
+
+        Deleting the table is the simplest way to walk out of a session, and
+        it takes one command. It is detected rather than prevented, because
+        root can always do it: the rules go back, and the attempt is recorded
+        as a rupture, which is the whole of what P2 promises.
+        """
+        if not self._applied or rules_loaded(runner=self.runner):
+            return
+
+        log.warning("Anchor's firewall table is gone; putting it back")
+        self.report_tampering(
+            "rules_missing",
+            "the inet anchor table was removed while a session was running",
+        )
+        # Forget what was applied so the next apply() rebuilds it rather than
+        # deciding nothing has changed.
+        self._applied = False
+        with self._lock:
+            self._policy = None
+
+    def report_tampering(self, kind: str, detail: str) -> None:
+        try:
+            with EngineClient(self.paths.engine_socket, timeout=2.0) as client:
+                client.call("tamper.report", {"kind": kind, "detail": detail})
+        except (EngineUnreachableError, OSError):
+            log.warning("could not report tampering; the engine is unreachable")
 
     # -- the two transitions -------------------------------------------------
 

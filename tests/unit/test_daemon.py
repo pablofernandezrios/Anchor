@@ -208,3 +208,52 @@ class TestCountingAttempts:
     def test_an_unreachable_engine_does_not_break_a_lookup(self, daemon: BlockerDaemon) -> None:
         """Losing a statistic is not worth failing a DNS query over."""
         daemon.on_blocked("youtube.com", "youtube.com")  # no engine is listening
+
+
+class TestNoticingTheRulesAreGone:
+    """SPEC 7.6: a missing nftables table is manipulation, and is recorded."""
+
+    def test_a_missing_table_is_noticed(self, paths: Paths, lists: Lists, tmp_path: Path) -> None:
+        # nft list fails, which is what an absent table looks like.
+        runner = RecordingRunner(
+            {
+                "resolvectl status": Result(code=0, out=STATUS),
+                "is-active": Result(code=0, out="active"),
+                "nft list table": Result(code=1, err="No such file or directory"),
+            }
+        )
+        daemon = BlockerDaemon(
+            paths,
+            lists=lists,
+            runner=runner,
+            resolver_port=5391,
+            resolved_drop_in=tmp_path / "run" / "50-anchor.conf",
+        )
+        daemon.apply(WebMode.BLOCKLIST, frozenset({"youtube.com"}))
+        assert daemon.current_policy() is not None
+
+        daemon.check_rules_survive()
+
+        # Forgotten, so the next poll rebuilds rather than deciding nothing
+        # has changed.
+        assert daemon.current_policy() is None
+        assert daemon.applied is False
+
+    def test_a_table_that_is_still_there_is_left_alone(
+        self, daemon: BlockerDaemon, runner: RecordingRunner
+    ) -> None:
+        daemon.apply(WebMode.BLOCKLIST, frozenset({"youtube.com"}))
+        before = len(runner.calls)
+
+        daemon.check_rules_survive()
+
+        assert daemon.applied
+        # Only the check itself, no rebuild.
+        assert len(runner.calls) == before + 1
+
+    def test_nothing_is_checked_when_no_session_is_running(
+        self, daemon: BlockerDaemon, runner: RecordingRunner
+    ) -> None:
+        """With no rules applied there is nothing to have been removed."""
+        daemon.check_rules_survive()
+        assert not runner.ran("nft list table")

@@ -364,3 +364,46 @@ class TestRefusingAManualStop:
         engine.load()
 
         assert not is_applied(runtime)
+
+
+class TestRecordingTampering:
+    """SPEC 7.6: detected manipulation is a rupture."""
+
+    def test_a_reported_removal_becomes_a_rupture(
+        self, client: EngineClient, engine: Engine
+    ) -> None:
+        client.call(
+            "session.start",
+            {"profile": "Study", "duration_seconds": HOUR, "level": "firm"},
+        )
+
+        response = client.call(
+            "tamper.report",
+            {"kind": "rules_missing", "detail": "the inet anchor table was removed"},
+        )
+
+        assert response.ok
+        kinds = [rupture["kind"] for rupture in engine.state.ruptures]
+        assert "tampering" in kinds
+
+    def test_the_detail_is_kept_for_the_statistics(
+        self, client: EngineClient, engine: Engine
+    ) -> None:
+        client.call(
+            "session.start",
+            {"profile": "Study", "duration_seconds": HOUR, "level": "firm"},
+        )
+        client.call(
+            "tamper.report",
+            {"kind": "rules_missing", "detail": "the inet anchor table was removed"},
+        )
+
+        recorded = engine.state.ruptures[-1]
+        assert "rules_missing" in recorded["detail"]
+        assert "inet anchor" in recorded["detail"]
+
+    def test_an_unknown_kind_is_rejected(self, client: EngineClient) -> None:
+        """The protocol names what can be reported, so typos fail loudly."""
+        response = client.call("tamper.report", {"kind": "whatever", "detail": "x"})
+        assert not response.ok
+        assert response.code == ErrorCode.BAD_REQUEST
