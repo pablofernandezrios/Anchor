@@ -13,7 +13,6 @@ optdepends=(
   'gtk4: graphical interface'
   'libadwaita: graphical interface'
   'python-gobject: graphical interface'
-  'libayatana-appindicator: top-bar indicator'
   'gnome-shell-extension-appindicator: top-bar indicator on GNOME'
 )
 makedepends=('python-build' 'python-installer' 'python-setuptools' 'python-wheel')

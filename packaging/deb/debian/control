@@ -16,8 +16,7 @@ Depends: ${python3:Depends},
          systemd
 Recommends: gir1.2-gtk-4.0,
             gir1.2-adw-1,
-            python3-gi,
-            gir1.2-ayatanaappindicator3-0.1
+            python3-gi
 Suggests: gnome-shell-extension-appindicator
 Description: Focus tool that blocks websites and applications
  Anchor blocks websites and applications during focus sessions, enforces
@@ -29,4 +28,7 @@ Description: Focus tool that blocks websites and applications
  defeat it; the goal is that doing so is tedious and leaves a record.
  .
  The graphical interface needs GTK4 and libadwaita, which are recommended
- rather than required so that a server install stays small.
+ rather than required so that a server install stays small. The top-bar
+ indicator speaks StatusNotifierItem over D-Bus directly (see docs/adr/0003),
+ so no AppIndicator library is needed; on GNOME it wants the AppIndicator
+ shell extension, which Ubuntu enables by default.

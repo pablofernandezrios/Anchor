@@ -4,7 +4,7 @@ The risky assumptions in `SPEC.md`, and what testing them showed. The scripts
 are in [`spikes/`](../../spikes/); this page records what they found and what
 it means for the code.
 
-**5 of 7 answered.** The four that need a booted machine ran on an Ubuntu
+**All 7 answered.** The four that need a booted machine ran on an Ubuntu
 24.04 runner with systemd 255; the three that need a GNOME session are waiting
 on a desktop VM.
 
@@ -13,14 +13,20 @@ on a desktop VM.
 | 1 | DNS in front of systemd-resolved | CI VM | **Works**, with a caveat to confirm on a NetworkManager desktop |
 | 2 | nftables DNS redirect exempting the resolver | CI VM | **Works** |
 | 3 | Netlink proc connector | CI VM | **Works** |
-| 4 | StatusNotifier/AppIndicator on GNOME | Desktop VM | **Partly answered**: the GNOME side works; the binding route needs re-running |
-| 5 | Fullscreen break overlay on Wayland | Desktop VM | **Limits established and settled by [ADR 2](../adr/0002-what-a-break-can-and-cannot-enforce.md)**; run still pending |
-| 6 | Browser DoH policy paths | Desktop VM | **Firefox paths confirmed**; the Snap question is open |
+| 4 | StatusNotifier/AppIndicator on GNOME | Desktop VM | **Works** over D-Bus, no AppIndicator library ([ADR 3](../adr/0003-speak-statusnotifieritem-over-dbus.md)) |
+| 5 | Fullscreen break overlay on Wayland | Desktop VM | **Works** on one display; multi-monitor untested. Limits settled by [ADR 2](../adr/0002-what-a-break-can-and-cannot-enforce.md) |
+| 6 | Browser DoH policy paths | Desktop VM | Firefox confirmed; **Snap DoH and the Chromium family still open** |
 | 7 | Runtime `RefuseManualStop` drop-in | CI VM | **Works** |
 
-Nothing so far contradicts the specification. The one point that needed a
-decision, what a Mandatory break can actually enforce, is settled by
-[ADR 2](../adr/0002-what-a-break-can-and-cannot-enforce.md).
+**Nothing contradicts the specification.** Two points needed decisions and
+both are recorded: what a Mandatory break can enforce
+([ADR 2](../adr/0002-what-a-break-can-and-cannot-enforce.md)), and how the
+indicator reaches the top bar
+([ADR 3](../adr/0003-speak-statusnotifieritem-over-dbus.md)).
+
+Three things remain unverified rather than unanswered, and none of them blocks
+Milestone 2: the multi-monitor overlay, DNS-over-HTTPS in the Firefox Snap, and
+the Chromium-family policy paths on a machine that has those browsers.
 
 ---
 
@@ -157,46 +163,58 @@ that asks to be presented again if it loses focus. Milestone 5 builds that.
 
 ---
 
-## Spike 4: the top-bar indicator — the GNOME side works, the binding route changes
+## Spike 4: the top-bar indicator — works, and drops a dependency
 
-Run on Ubuntu in a VMware VM, from a console rather than the graphical session,
-so nothing could be confirmed by eye. What the bus said is still conclusive:
+Run on Ubuntu GNOME on Wayland.
 
-- `org.kde.StatusNotifierWatcher` **is registered**, so something is listening
-  for indicators;
-- `ubuntu-appindicators@ubuntu.com` **is enabled**, which is the extension that
-  does the listening.
+**The GNOME side is in place.** `org.kde.StatusNotifierWatcher` is registered
+and `ubuntu-appindicators@ubuntu.com` is enabled, so SPEC 14.1's assumption
+holds on Ubuntu and onboarding only has to detect their absence elsewhere.
 
-So SPEC 14.1's assumption holds on Ubuntu: there is a watcher and an extension,
-and onboarding only needs to detect their absence elsewhere.
+**The library route is out.** `AyatanaAppIndicator3` is a GTK3 library and
+Anchor's interface is GTK4. A process cannot load both, so that route would
+have pushed the indicator out of `anchor-agent` into a process of its own,
+against SPEC 5.1.
 
-### The finding underneath
+**The D-Bus route works.** Registering an `org.kde.StatusNotifierItem` directly
+with Gio — icon, title, and `XAyatanaLabel` for the remaining time — was
+accepted by the watcher, and the watcher listed the item back. No GTK at all is
+involved in reaching the bus.
 
-The spike reported `FAIL` because `AyatanaAppIndicator3` was not installed.
-**That grade was wrong** — a missing package is a dependency to declare, not a
-contradicted assumption, and the verdict is now `unavailable` with the package
-name. The same mistake as the `.invalid` probe in spike 1: a spike that cannot
-tell "this does not work" from "this was not set up".
+So the indicator stays inside the GTK4 agent as SPEC 5.1 describes,
+`gir1.2-ayatanaappindicator3-0.1` leaves the dependency lists, and no GTK3 is
+needed anywhere in Anchor. Recorded as
+[ADR 3](../adr/0003-speak-statusnotifieritem-over-dbus.md). The cost is the
+menu: `libayatana-appindicator` supplies `com.canonical.dbusmenu` for free and
+Anchor now exports it itself, which Milestone 8 carries.
 
-Looking at why it failed exposed something real. `AyatanaAppIndicator3` is a
-**GTK3** library, and the spike loaded `Gtk 3.0` to drive it. Anchor's
-interface is **GTK4** (SPEC 14), and a single process cannot load GTK3 and GTK4
-at once. Taking that route would force the indicator out of `anchor-agent` into
-a process of its own, which contradicts SPEC 5.1, where the indicator is part
-of the agent.
+### A third self-grading row
 
-### The way out
+The spike had a "check by eye" row that reported `PASS` no matter what the
+person watching saw. It graded an instruction rather than an observation, which
+is the same failure as the `.invalid` probe and the missing-package verdict:
+a check that cannot fail teaches nothing.
 
-The extension watches a D-Bus interface. Anything that registers as an
-`org.kde.StatusNotifierItem` gets shown, and speaking that interface with Gio
-needs no GTK at all. The spike now registers a real item that way — icon,
-title, and the `XAyatanaLabel` that puts the remaining time beside the icon —
-and asks the watcher to list it back.
+Rows needing a human now report `LOOK` and ask a question by name. They are
+never a pass.
 
-If that works, Anchor needs no AppIndicator library, drops
-`gir1.2-ayatanaappindicator3-0.1` from its dependencies, and the indicator
-stays inside the GTK4 agent exactly as SPEC 5.1 describes. **This is the result
-still to confirm**, by re-running spike 4 from inside the GNOME session.
+---
+
+## Spike 5: the break overlay — works on one display
+
+On Wayland, GTK4 opened a fullscreen window on each detected monitor and held
+it for five seconds. `Gdk.Display.get_monitors()` enumerated the display and
+`fullscreen_on_monitor()` covered it.
+
+**Multi-monitor is untested.** The VM has one display, so the case SPEC 10
+actually asks for has not been exercised. This needs a second display attached
+before Milestone 5 relies on it; it is not a risk to the design, since the code
+path is per-monitor either way.
+
+The limits are unchanged and settled by
+[ADR 2](../adr/0002-what-a-break-can-and-cannot-enforce.md): no way to force a
+window above everything, no keyboard grab, so a Mandatory break means the
+overlay returns rather than the screen being seized.
 
 ---
 
@@ -217,7 +235,14 @@ supposed to read `/etc/firefox/policies`, but a confined Snap reading `/etc` is
 exactly the assumption SPEC 8.2 rests on, and the spike cannot prove it from
 the outside. It needs one manual check: with the policy written, open
 `about:policies` in the Snap Firefox and confirm `DNSOverHTTPS` shows as locked
-off. Until then, treat Snap Firefox as able to bypass Anchor through DoH.
+off.
+
+Until that is confirmed, **Snap Firefox is assumed able to bypass Anchor
+through DoH**. That is not fatal to Milestone 2: the nftables rules block the
+DoH endpoints on the shipped list regardless of what any browser is configured
+to do, and the managed policy is the belt to that braces. But if the policy
+does not apply, the README has to say so, because Snap Firefox is the default
+browser on Ubuntu.
 
 ---
 

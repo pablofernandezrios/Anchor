@@ -103,18 +103,34 @@ def spike(report: SpikeReport) -> None:
     )
 
     if "OK" in result.out:
+        count = count_line.removeprefix("MONITORS ").strip() or "?"
         report.add(
-            "overlay covers every monitor",
+            "overlay opens per monitor",
             Verdict.WORKS,
-            f"{count_line.removeprefix('MONITORS ') or '?'} monitor(s) detected and each "
-            "got its own fullscreen window for five seconds",
+            f"{count} monitor(s) detected and each got its own fullscreen window "
+            "for five seconds",
             "\n".join(monitors),
         )
+        if count == "1":
+            report.add(
+                "multiple monitors",
+                Verdict.UNAVAILABLE,
+                "this machine has one display, so the multi-monitor case SPEC 10 "
+                "asks for is still untested. Attach a second display and re-run "
+                "before Milestone 5 relies on it",
+            )
+        else:
+            report.add(
+                "multiple monitors",
+                Verdict.OBSERVED,
+                f"ANSWER THIS: {count} displays were detected. Did every one of "
+                "them go black, or did any stay uncovered?",
+            )
         report.add(
             "check by eye",
-            Verdict.WORKS,
-            "every screen should have shown a black window reading 04:12. If a "
-            "screen stayed uncovered, note which one",
+            Verdict.OBSERVED,
+            "ANSWER THIS: did a black window reading 04:12 actually appear, and "
+            "did it cover the whole screen including the top bar?",
         )
     else:
         report.add(

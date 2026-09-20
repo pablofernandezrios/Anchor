@@ -28,7 +28,7 @@ a change can be refused.
 |---|---|---|---|
 | Engine | `anchord` | root, system service | Implemented (Milestone 1) |
 | Blocker | `anchor-blockerd` | root, system service | Stub; Milestones 2 and 4 |
-| Agent and indicator | `anchor-agent` | the owner, user service | Milestone 5 |
+| Agent and indicator | `anchor-agent` | the owner, user service | Milestone 5. Speaks StatusNotifierItem over D-Bus, no AppIndicator library ([ADR 3](adr/0003-speak-statusnotifieritem-over-dbus.md)) |
 | Interface | `anchor-gui` | the owner | Milestone 8 |
 | Command line | `anchor` | any allowed user | `status`, `start`, `extend`, `cancel`, `valve` |
 

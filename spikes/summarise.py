@@ -16,6 +16,7 @@ MARK = {
     "works": "PASS",
     "fails": "FAIL",
     "unavailable": "SKIP",
+    "observed": "LOOK",
     "ruled_out": "RULED OUT",
 }
 

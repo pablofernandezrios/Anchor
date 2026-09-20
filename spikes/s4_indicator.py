@@ -208,11 +208,11 @@ def _check_dbus_route(report: SpikeReport, *, graphical: bool) -> None:
     if registered and graphical:
         report.add(
             "check by eye",
-            Verdict.WORKS,
-            "while that ran, the top bar should have shown an alarm icon with "
-            "the label 2:14 beside it for six seconds. SPEC 14.1 wants both the "
-            "icon and the remaining time, so note whether the label appeared or "
-            "only the icon",
+            Verdict.OBSERVED,
+            "ANSWER THIS: for six seconds the top bar carried an item. Did it "
+            "show the text 2:14 beside the icon, or the icon alone? SPEC 14.1 "
+            "wants the icon and the remaining time, and whether the label "
+            "renders depends on the extension, not on Anchor",
         )
 
 

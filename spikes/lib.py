@@ -34,6 +34,14 @@ class Verdict(StrEnum):
     UNAVAILABLE = "unavailable"
     """This machine cannot answer the question; try it elsewhere."""
 
+    OBSERVED = "observed"
+    """Something only a person watching the screen can answer.
+
+    Never a pass. A spike cannot see whether a label appeared in the top bar,
+    and a row that grades itself teaches nothing: it reports whatever it was
+    told to report. These rows ask a question and wait for an answer.
+    """
+
     RULED_OUT = "ruled_out"
     """An approach that does not work, where another one does.
 
@@ -55,6 +63,7 @@ class Finding:
             Verdict.WORKS: "PASS",
             Verdict.FAILS: "FAIL",
             Verdict.UNAVAILABLE: "SKIP",
+            Verdict.OBSERVED: "LOOK",
             Verdict.RULED_OUT: "RULED OUT",
         }
         return f"[{mark[self.verdict]}] {self.name}: {self.detail}"
