@@ -42,6 +42,8 @@ package() {
   install -Dm644 packaging/systemd/anchor-agent.service "$pkgdir/usr/lib/systemd/user/anchor-agent.service"
 
   install -Dm644 data/essentials.txt "$pkgdir/usr/share/anchor/essentials.txt"
+  install -Dm644 data/doh-endpoints.txt "$pkgdir/usr/share/anchor/doh-endpoints.txt"
+  install -Dm644 data/doh-domains.txt "$pkgdir/usr/share/anchor/doh-domains.txt"
 
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"

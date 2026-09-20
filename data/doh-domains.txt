@@ -1,0 +1,46 @@
+# DNS-over-HTTPS endpoints, by name (SPEC 8.2)
+#
+# The names browsers use to reach a DoH provider. Refusing them at the DNS
+# layer stops a browser that looks the endpoint up rather than using a built-in
+# address. The addresses themselves are in doh-endpoints.txt.
+#
+# A domain covers its subdomains. One per line. Edit freely.
+
+# --- Cloudflare ----------------------------------------------------------
+cloudflare-dns.com
+mozilla.cloudflare-dns.com
+chrome.cloudflare-dns.com
+one.one.one.one
+
+# --- Google --------------------------------------------------------------
+dns.google
+dns.google.com
+
+# --- Quad9 ---------------------------------------------------------------
+dns.quad9.net
+dns9.quad9.net
+dns10.quad9.net
+dns11.quad9.net
+
+# --- OpenDNS -------------------------------------------------------------
+doh.opendns.com
+doh.familyshield.opendns.com
+
+# --- AdGuard -------------------------------------------------------------
+dns.adguard.com
+dns.adguard-dns.com
+dns-unfiltered.adguard.com
+
+# --- NextDNS -------------------------------------------------------------
+dns.nextdns.io
+anycast.dns.nextdns.io
+
+# --- Mullvad, CleanBrowsing and others -----------------------------------
+doh.mullvad.net
+adblock.doh.mullvad.net
+doh.cleanbrowsing.org
+dns.sb
+doh.sb
+dns.libredns.gr
+doh.libredns.gr
+dnsforge.de
