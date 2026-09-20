@@ -4,7 +4,7 @@ The risky assumptions in `SPEC.md`, and what testing them showed. The scripts
 are in [`spikes/`](../../spikes/); this page records what they found and what
 it means for the code.
 
-**4 of 7 answered.** The four that need a booted machine ran on an Ubuntu
+**5 of 7 answered.** The four that need a booted machine ran on an Ubuntu
 24.04 runner with systemd 255; the three that need a GNOME session are waiting
 on a desktop VM.
 
@@ -13,9 +13,9 @@ on a desktop VM.
 | 1 | DNS in front of systemd-resolved | CI VM | **Works**, with a caveat to confirm on a NetworkManager desktop |
 | 2 | nftables DNS redirect exempting the resolver | CI VM | **Works** |
 | 3 | Netlink proc connector | CI VM | **Works** |
-| 4 | StatusNotifier/AppIndicator on GNOME | Desktop VM | Pending |
+| 4 | StatusNotifier/AppIndicator on GNOME | Desktop VM | **Partly answered**: the GNOME side works; the binding route needs re-running |
 | 5 | Fullscreen break overlay on Wayland | Desktop VM | **Limits established and settled by [ADR 2](../adr/0002-what-a-break-can-and-cannot-enforce.md)**; run still pending |
-| 6 | Browser DoH policy paths | Desktop VM | Pending |
+| 6 | Browser DoH policy paths | Desktop VM | **Firefox paths confirmed**; the Snap question is open |
 | 7 | Runtime `RefuseManualStop` drop-in | CI VM | **Works** |
 
 Nothing so far contradicts the specification. The one point that needed a
@@ -154,6 +154,70 @@ levels stay and Mandatory still refuses skipping and postponing, but the break
 is enforced by being impossible to miss rather than by force. A warning before
 it starts, the time always visible, an alert when it begins, and an overlay
 that asks to be presented again if it loses focus. Milestone 5 builds that.
+
+---
+
+## Spike 4: the top-bar indicator — the GNOME side works, the binding route changes
+
+Run on Ubuntu in a VMware VM, from a console rather than the graphical session,
+so nothing could be confirmed by eye. What the bus said is still conclusive:
+
+- `org.kde.StatusNotifierWatcher` **is registered**, so something is listening
+  for indicators;
+- `ubuntu-appindicators@ubuntu.com` **is enabled**, which is the extension that
+  does the listening.
+
+So SPEC 14.1's assumption holds on Ubuntu: there is a watcher and an extension,
+and onboarding only needs to detect their absence elsewhere.
+
+### The finding underneath
+
+The spike reported `FAIL` because `AyatanaAppIndicator3` was not installed.
+**That grade was wrong** — a missing package is a dependency to declare, not a
+contradicted assumption, and the verdict is now `unavailable` with the package
+name. The same mistake as the `.invalid` probe in spike 1: a spike that cannot
+tell "this does not work" from "this was not set up".
+
+Looking at why it failed exposed something real. `AyatanaAppIndicator3` is a
+**GTK3** library, and the spike loaded `Gtk 3.0` to drive it. Anchor's
+interface is **GTK4** (SPEC 14), and a single process cannot load GTK3 and GTK4
+at once. Taking that route would force the indicator out of `anchor-agent` into
+a process of its own, which contradicts SPEC 5.1, where the indicator is part
+of the agent.
+
+### The way out
+
+The extension watches a D-Bus interface. Anything that registers as an
+`org.kde.StatusNotifierItem` gets shown, and speaking that interface with Gio
+needs no GTK at all. The spike now registers a real item that way — icon,
+title, and the `XAyatanaLabel` that puts the remaining time beside the icon —
+and asks the watcher to list it back.
+
+If that works, Anchor needs no AppIndicator library, drops
+`gir1.2-ayatanaappindicator3-0.1` from its dependencies, and the indicator
+stays inside the GTK4 agent exactly as SPEC 5.1 describes. **This is the result
+still to confirm**, by re-running spike 4 from inside the GNOME session.
+
+---
+
+## Spike 6: browser policy paths — Firefox confirmed, the Snap still open
+
+On the desktop VM:
+
+| Browser | Found at | Policy path |
+|---|---|---|
+| Firefox (deb) | `/usr/bin/firefox` | `/etc/firefox/policies/policies.json` |
+| Firefox (Snap) | `/snap/firefox/current/…` | `/etc/firefox/policies/policies.json` |
+
+Chrome, Chromium, Brave and Edge were not installed, so their paths are still
+only what the documentation claims.
+
+**The open question is the Snap.** Both Firefox builds are present and both are
+supposed to read `/etc/firefox/policies`, but a confined Snap reading `/etc` is
+exactly the assumption SPEC 8.2 rests on, and the spike cannot prove it from
+the outside. It needs one manual check: with the policy written, open
+`about:policies` in the Snap Firefox and confirm `DNSOverHTTPS` shows as locked
+off. Until then, treat Snap Firefox as able to bypass Anchor through DoH.
 
 ---
 

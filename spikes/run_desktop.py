@@ -15,6 +15,7 @@ anyway: that is what a snapshot is for.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -34,12 +35,50 @@ Run this in a disposable virtual machine with a fresh snapshot.
 """
 
 
+def preflight() -> list[str]:
+    """Reasons these spikes cannot answer their questions here.
+
+    Two of the three need to draw on a screen. Running them from a console or
+    over plain ssh produces a page of skips that look like results, so it is
+    better to say so before anything runs.
+    """
+    problems: list[str] = []
+
+    session = os.environ.get("XDG_SESSION_TYPE", "")
+    if session not in ("wayland", "x11"):
+        problems.append(
+            f"XDG_SESSION_TYPE is {session or 'unset'}, not wayland or x11. "
+            "Open a terminal inside the GNOME session rather than a console or ssh."
+        )
+    if not (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
+        problems.append("Neither WAYLAND_DISPLAY nor DISPLAY is set, so no window can be opened.")
+    if not os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
+        problems.append("DBUS_SESSION_BUS_ADDRESS is unset, so the session bus is unreachable.")
+
+    return problems
+
+
 def main(argv: list[str]) -> int:
     out_dir = Path(argv[0]) if argv and not argv[0].startswith("-") else HERE / "results"
     write = "--write" in argv
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(BANNER)
+
+    problems = preflight()
+    if problems:
+        print("This session cannot answer two of the three questions:\n")
+        for problem in problems:
+            print(f"  - {problem}")
+        print(
+            "\nThe browser policy spike works anywhere, so you can continue and "
+            "get that one answer, but the indicator and overlay results will be "
+            "skips rather than findings.\n"
+        )
+        if input("Continue anyway? Type yes: ").strip().lower() not in ("yes", "y"):
+            print("Nothing was run. Open a terminal inside the GNOME session and try again.")
+            return 1
+        print()
     if write:
         print("Running with --write: browser policy files will be written and restored.\n")
     if input("Type yes to continue: ").strip().lower() not in ("yes", "y"):
