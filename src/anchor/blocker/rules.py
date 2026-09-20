@@ -43,6 +43,11 @@ class FirewallPlan:
     doh_v6: list[str] = field(default_factory=list)
     blocked_v4: list[str] = field(default_factory=list)
     blocked_v6: list[str] = field(default_factory=list)
+    tunnel_ports: list[tuple[str, int]] = field(default_factory=list)
+    """VPN and Tor ports to block, as (protocol, port) (SPEC 8.2, ADR 4).
+
+    Empty unless the session is Strict and its profile asks for it.
+    """
     """Addresses of names this session blocks, from the recent-answer map.
 
     Blocking DNS does nothing for a page already open: the address is known and
@@ -152,6 +157,20 @@ def build_ruleset(plan: FirewallPlan) -> str:
     if plan.blocked_v6:
         filter_rules += ["        ip6 daddr @blocked_v6 reject"]
 
+    if plan.tunnel_ports:
+        by_protocol: dict[str, list[int]] = {}
+        for protocol, port in plan.tunnel_ports:
+            by_protocol.setdefault(protocol, []).append(port)
+
+        filter_rules.append("        # VPN and Tor, in Strict sessions only. Best effort: this")
+        filter_rules.append("        # stops a tunnel on its usual port and not one over 443.")
+        for protocol in sorted(by_protocol):
+            ports = ", ".join(str(port) for port in sorted(set(by_protocol[protocol])))
+            # Rejected rather than dropped, so a VPN client fails at once and
+            # says so instead of hanging and looking like a broken network.
+            verb = "reject with tcp reset" if protocol == "tcp" else "drop"
+            filter_rules.append(f"        {protocol} dport {{ {ports} }} {verb}")
+
     if filter_rules:
         lines += [
             "    chain block_encrypted_dns {",
@@ -165,6 +184,41 @@ def build_ruleset(plan: FirewallPlan) -> str:
 
     lines.append("}")
     return "\n".join(lines) + "\n"
+
+
+def load_tunnel_ports(path: Path) -> list[tuple[str, int]]:
+    """Read ``tunnels.txt`` as (protocol, port) pairs (SPEC 8.2).
+
+    A line that is not a protocol and a port is skipped with a warning rather
+    than taken down the whole file: a typo should cost one rule, not the list.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as error:
+        log.warning("could not read the tunnel list at %s: %s", path, error)
+        return []
+
+    ports: list[tuple[str, int]] = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        entry = line.split("#", 1)[0].strip().lower()
+        if not entry:
+            continue
+
+        protocol, _, raw_port = entry.partition("/")
+        if protocol not in ("tcp", "udp", "any") or not raw_port.isdigit():
+            log.warning("%s line %d: %r is not protocol/port; skipping", path, number, entry)
+            continue
+
+        port = int(raw_port)
+        if not 1 <= port <= 65535:
+            log.warning("%s line %d: port %d is out of range; skipping", path, number, port)
+            continue
+
+        for name in ("tcp", "udp") if protocol == "any" else (protocol,):
+            if (name, port) not in ports:
+                ports.append((name, port))
+
+    return ports
 
 
 def load_addresses(path: Path) -> list[str]:
@@ -202,11 +256,12 @@ def apply_rules(plan: FirewallPlan, journal: Journal, *, runner: Runner = run) -
         raise RuleLoadError(f"nftables refused the ruleset: {result.text}")
 
     log.info(
-        "firewall rules loaded: DNS redirected to port %d, %d DoH endpoint(s) and "
-        "%d already-resolved address(es) blocked",
+        "firewall rules loaded: DNS redirected to port %d, %d DoH endpoint(s), "
+        "%d already-resolved address(es) and %d tunnel port(s) blocked",
         plan.resolver_port,
         len(plan.doh_v4) + len(plan.doh_v6),
         len(plan.blocked_v4) + len(plan.blocked_v6),
+        len(plan.tunnel_ports),
     )
 
 

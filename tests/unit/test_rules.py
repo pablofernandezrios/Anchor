@@ -158,3 +158,78 @@ class TestRejectingAlreadyResolvedAddresses:
         ruleset = build_ruleset(FirewallPlan(blocked_v4=["1.2.3.4"]))
         assert "@blocked_v4 reject" in ruleset
         assert "@blocked_v4 drop" not in ruleset
+
+
+class TestBlockingTunnels:
+    """VPN and Tor, in Strict sessions only (SPEC 8.2, ADR 4)."""
+
+    def test_the_ports_are_blocked(self) -> None:
+        ruleset = build_ruleset(
+            FirewallPlan(tunnel_ports=[("udp", 51820), ("udp", 1194), ("tcp", 1723)])
+        )
+
+        assert "udp dport { 1194, 51820 } drop" in ruleset
+        assert "tcp dport { 1723 } reject with tcp reset" in ruleset
+
+    def test_tcp_is_rejected_rather_than_dropped(self) -> None:
+        """A VPN client should fail and say so, not hang looking like bad wifi."""
+        ruleset = build_ruleset(FirewallPlan(tunnel_ports=[("tcp", 9001)]))
+
+        assert "reject with tcp reset" in ruleset
+        assert "tcp dport { 9001 } drop" not in ruleset
+
+    def test_nothing_is_emitted_when_tunnels_are_allowed(self) -> None:
+        """Below Strict, and for a profile that opted out, there are no rules."""
+        ruleset = build_ruleset(FirewallPlan(tunnel_ports=[]))
+        assert "51820" not in ruleset
+
+    def test_the_resolver_is_still_exempt(self) -> None:
+        ruleset = build_ruleset(FirewallPlan(tunnel_ports=[("udp", 51820)]))
+        chain = ruleset[ruleset.index("chain block_encrypted_dns") :]
+        assert chain.index("meta mark") < chain.index("51820")
+
+
+class TestReadingTheTunnelList:
+    def test_the_shipped_list_parses(self) -> None:
+        from anchor.blocker.rules import load_tunnel_ports
+
+        shipped = Path(__file__).resolve().parents[2] / "data" / "tunnels.txt"
+        ports = load_tunnel_ports(shipped)
+
+        assert ("udp", 51820) in ports, "WireGuard"
+        assert ("udp", 1194) in ports, "OpenVPN"
+        assert ("udp", 500) in ports, "IPsec"
+        assert ("tcp", 9001) in ports, "Tor"
+        assert len(ports) >= 10
+
+    def test_any_covers_both_protocols(self, tmp_path: Path) -> None:
+        from anchor.blocker.rules import load_tunnel_ports
+
+        listing = tmp_path / "tunnels.txt"
+        listing.write_text("any/1194\n", encoding="utf-8")
+
+        assert load_tunnel_ports(listing) == [("tcp", 1194), ("udp", 1194)]
+
+    def test_a_bad_line_costs_one_rule_not_the_file(self, tmp_path: Path) -> None:
+        from anchor.blocker.rules import load_tunnel_ports
+
+        listing = tmp_path / "tunnels.txt"
+        listing.write_text("udp/500\nnonsense\nsctp/99\nudp/abc\ntcp/1723\n", encoding="utf-8")
+
+        assert load_tunnel_ports(listing) == [("udp", 500), ("tcp", 1723)]
+
+    def test_an_impossible_port_is_skipped(self, tmp_path: Path) -> None:
+        from anchor.blocker.rules import load_tunnel_ports
+
+        listing = tmp_path / "tunnels.txt"
+        listing.write_text("udp/0\nudp/70000\nudp/500\n", encoding="utf-8")
+
+        assert load_tunnel_ports(listing) == [("udp", 500)]
+
+    def test_duplicates_are_collapsed(self, tmp_path: Path) -> None:
+        from anchor.blocker.rules import load_tunnel_ports
+
+        listing = tmp_path / "tunnels.txt"
+        listing.write_text("udp/500\nudp/500\n", encoding="utf-8")
+
+        assert load_tunnel_ports(listing) == [("udp", 500)]

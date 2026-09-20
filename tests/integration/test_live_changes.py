@@ -11,6 +11,7 @@ import os
 import threading
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -239,3 +240,68 @@ class TestCreating:
     def test_a_duplicate_name_is_refused(self, client: EngineClient) -> None:
         response = client.call("profile.create", {"name": "Study"})
         assert response.code == ErrorCode.INVALID_CONFIG
+
+
+class TestWhenTunnelsAreBlocked:
+    """SPEC 7.2 allows VPN below Strict; ADR 4 lets a profile opt out above it."""
+
+    def policy(self, client: EngineClient) -> dict[str, Any]:
+        return client.call("policy.get").result
+
+    def test_a_soft_session_does_not_block_them(self, client: EngineClient) -> None:
+        client.call(
+            "session.start",
+            {"profile": "Study", "duration_seconds": HOUR, "level": "soft"},
+        )
+        assert self.policy(client)["block_tunnels"] is False
+
+    def test_a_firm_session_does_not_block_them(self, client: EngineClient) -> None:
+        client.call(
+            "session.start",
+            {"profile": "Study", "duration_seconds": HOUR, "level": "firm"},
+        )
+        assert self.policy(client)["block_tunnels"] is False
+
+    def test_a_strict_session_blocks_them(self, client: EngineClient) -> None:
+        client.call(
+            "session.start",
+            {
+                "profile": "Study",
+                "duration_seconds": HOUR,
+                "level": "strict",
+                "valve": "wait",
+            },
+        )
+        assert self.policy(client)["block_tunnels"] is True
+
+    def test_a_profile_can_opt_out_before_the_session(self, client: EngineClient) -> None:
+        """ADR 4: the choice is made beforehand, and this is beforehand."""
+        client.call("profile.edit", {"name": "Study", "block_vpn_and_tor": False})
+        client.call(
+            "session.start",
+            {
+                "profile": "Study",
+                "duration_seconds": HOUR,
+                "level": "strict",
+                "valve": "wait",
+            },
+        )
+
+        assert self.policy(client)["block_tunnels"] is False
+
+    def test_a_missing_profile_still_blocks_them_in_strict(
+        self, client: EngineClient, engine: Engine
+    ) -> None:
+        """A profile that vanished must not become a way to keep a tunnel up."""
+        client.call(
+            "session.start",
+            {
+                "profile": "Study",
+                "duration_seconds": HOUR,
+                "level": "strict",
+                "valve": "wait",
+            },
+        )
+        del engine.profiles["Study"]
+
+        assert self.policy(client)["block_tunnels"] is True

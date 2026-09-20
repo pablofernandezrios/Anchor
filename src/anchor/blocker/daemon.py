@@ -41,6 +41,7 @@ from anchor.blocker.rules import (
     FirewallPlan,
     apply_rules,
     load_addresses,
+    load_tunnel_ports,
     rules_loaded,
     split_addresses,
 )
@@ -70,6 +71,7 @@ class Lists:
     doh_domains: frozenset[str] = frozenset()
     doh_v4: list[str] | None = None
     doh_v6: list[str] | None = None
+    tunnel_ports: list[tuple[str, int]] | None = None
 
     @classmethod
     def load(cls, data_dir: Path = DATA_DIR) -> Lists:
@@ -79,6 +81,7 @@ class Lists:
             doh_domains=load_domain_file(data_dir / "doh-domains.txt"),
             doh_v4=v4,
             doh_v6=v6,
+            tunnel_ports=load_tunnel_ports(data_dir / "tunnels.txt"),
         )
 
 
@@ -108,6 +111,7 @@ class BlockerDaemon:
 
         self._policy: Policy | None = None
         self._applied = False
+        self._blocking_tunnels = False
         self._network = NetworkState()
         self._lock = threading.Lock()
         self._stopping = threading.Event()
@@ -195,6 +199,7 @@ class BlockerDaemon:
             self.apply(
                 WebMode(response.result.get("mode", WebMode.BLOCKLIST)),
                 frozenset(response.result.get("domains", ())),
+                block_tunnels=bool(response.result.get("block_tunnels", False)),
             )
         elif self._applied:
             self.undo()
@@ -230,7 +235,7 @@ class BlockerDaemon:
 
     # -- the two transitions -------------------------------------------------
 
-    def apply(self, mode: WebMode, domains: frozenset[str]) -> None:
+    def apply(self, mode: WebMode, domains: frozenset[str], *, block_tunnels: bool = False) -> None:
         """Bring the machine into line with a session."""
         # The DoH domains are added to whatever the user blocks, in both modes.
         # In blocklist mode they are extra rules; in allowlist mode they would
@@ -240,7 +245,9 @@ class BlockerDaemon:
         policy = Policy(mode=mode, domains=blocked_domains, essentials=self.lists.essentials)
 
         with self._lock:
-            unchanged = self._applied and self._policy == policy
+            unchanged = (
+                self._applied and self._policy == policy and self._blocking_tunnels == block_tunnels
+            )
             self._policy = policy
 
         if unchanged:
@@ -275,6 +282,7 @@ class BlockerDaemon:
                 doh_v6=self.lists.doh_v6 or [],
                 blocked_v4=blocked_v4,
                 blocked_v6=blocked_v6,
+                tunnel_ports=(self.lists.tunnel_ports or []) if block_tunnels else [],
             ),
             self.journal,
             runner=self.runner,
@@ -310,6 +318,7 @@ class BlockerDaemon:
         with self._lock:
             self._policy = None
         self._applied = False
+        self._blocking_tunnels = False
         # The map is a record of what the user looked at, so it does not outlive
         # the session that needed it.
         self.recent.clear()

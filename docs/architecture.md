@@ -200,6 +200,35 @@ Nothing that can break networking outlives Anchor.
   unsigned on purpose: uninstalling is always allowed, and an integrity check
   could only refuse to give someone their machine back.
 
+## Anti-evasion
+
+Everything here is friction rather than a lock, as P2 requires, and each piece
+says plainly what it does not stop.
+
+**A session refuses to be stopped by hand.** While one runs, the engine writes
+`RefuseManualStop=yes` into a runtime drop-in for both root units. Removing it
+takes root and one command; that is the point, not a flaw.
+
+**Only stricter changes are accepted.** Profile edits go through the ratchet
+before anything is written, so adding is free and removing is refused with
+`RATCHET_VIOLATION`. A refused edit changes nothing, including on disk. The
+ratchet protects the running session rather than the whole configuration file:
+a profile nothing is using can be edited freely, because a session cannot be
+moved onto it.
+
+**Manipulation is noticed and recorded.** The three kinds SPEC 7.6 names each
+become a rupture: a signature mismatch on the state file, a clock that
+disagrees with the boot clock, and Anchor's nftables table going missing. In
+the last case the blocker puts the rules back itself, because waiting for an
+instruction would leave the machine unblocked meanwhile, and reports the
+attempt so the engine can record it.
+
+**Strict sessions block tunnels**, if the profile asks (ADR 4). The usual VPN
+and Tor ports are rejected for TCP and dropped for UDP, from a shipped list.
+This is honestly lopsided: a VPN on its default port stops, and one carried
+over TCP 443 is indistinguishable from HTTPS and does not. Blocking 443 would
+mean blocking the web.
+
 ## Not built yet
 
 Web blocking, application blocking, breaks, schedules, statistics, the

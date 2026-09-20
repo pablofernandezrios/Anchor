@@ -350,13 +350,26 @@ class Engine:
                 session.id,
                 session.profile,
             )
-            return request.ok({"active": True, "mode": str(WebMode.ALLOWLIST), "domains": []})
+            return request.ok(
+                {
+                    "active": True,
+                    "mode": str(WebMode.ALLOWLIST),
+                    "domains": [],
+                    # A profile that vanished must not become a way to keep a
+                    # tunnel up either.
+                    "block_tunnels": session.level is Level.STRICT,
+                }
+            )
 
         return request.ok(
             {
                 "active": True,
                 "mode": str(profile.web_mode),
                 "domains": sorted(profile.domains),
+                # Two conditions, and the engine owns both. SPEC 7.2 allows VPN
+                # and Tor below Strict, and ADR 4 lets a profile opt out of
+                # blocking them even in Strict.
+                "block_tunnels": session.level is Level.STRICT and profile.block_vpn_and_tor,
             }
         )
 

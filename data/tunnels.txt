@@ -1,0 +1,41 @@
+# VPN and Tor: what a Strict session blocks (SPEC 8.2, ADR 4)
+#
+# Only in Strict sessions, and only when the profile says so. ADR 4 made this
+# a per-profile choice, on by default, because a Strict session cannot be
+# cancelled and a user whose work VPN dies with their distractions has no way
+# back except the emergency valve.
+#
+# Best effort, and worth being honest about why. This blocks the ports these
+# protocols use by default. A tunnel carried over TCP 443 is indistinguishable
+# from ordinary HTTPS and is not blocked at all, so this stops a VPN that is
+# configured normally and does not stop one configured to hide. The trade is
+# deliberate: the alternative is blocking 443, which is the whole web.
+#
+# Format: protocol/port, one per line. "any" matches both TCP and UDP.
+
+# --- WireGuard -----------------------------------------------------------
+# No fixed port in the protocol; this is the conventional default and what
+# most clients ship with.
+udp/51820
+
+# --- OpenVPN -------------------------------------------------------------
+udp/1194
+tcp/1194
+
+# --- IPsec, IKEv2 and L2TP ----------------------------------------------
+udp/500
+udp/4500
+udp/1701
+
+# --- PPTP ----------------------------------------------------------------
+# Obsolete and insecure, but still configured on old corporate gateways.
+tcp/1723
+
+# --- Tor -----------------------------------------------------------------
+# The ports relays conventionally listen on. Tor's own bridges exist precisely
+# to defeat this kind of blocking, and they work; see the note above.
+tcp/9001
+tcp/9030
+tcp/9050
+tcp/9051
+tcp/9150

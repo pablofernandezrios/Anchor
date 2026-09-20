@@ -5,3 +5,4 @@ data/categories/* usr/share/anchor/categories/
 data/essentials.txt usr/share/anchor/
 data/doh-endpoints.txt usr/share/anchor/
 data/doh-domains.txt usr/share/anchor/
+data/tunnels.txt usr/share/anchor/

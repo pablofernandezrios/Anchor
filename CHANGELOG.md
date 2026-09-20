@@ -32,5 +32,9 @@ this project follows [Semantic Versioning](https://semver.org/).
 - Leak tests proving a blocked domain cannot be reached through plain DNS, a
   public resolver, DNS over TLS, a shipped DoH endpoint or a cached address
   (SPEC 8.4).
+- Anti-evasion: manual stops refused during sessions, the ratchet applied to
+  live profile edits, ruptures recorded for a removed firewall table, and VPN
+  and Tor blocking in Strict sessions (SPEC 5.3, 7.4, 7.6, 8.2).
+- `anchor profile list|show|create|edit|delete` (SPEC 15).
 
 [Unreleased]: https://github.com/pablofernandezrios/anchor/commits/main
