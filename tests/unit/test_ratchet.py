@@ -126,3 +126,28 @@ class TestBreakWarning:
 
         settings = BreakSettings(warning_seconds=120)
         assert BreakSettings.from_dict(settings.to_dict()) == settings
+
+
+class TestTunnelBlocking:
+    """ADR 4: blocking VPN and Tor is a profile choice, made beforehand."""
+
+    def test_it_is_on_by_default(self) -> None:
+        """Doing nothing gives the behaviour SPEC 8.2 describes."""
+        assert profile().block_vpn_and_tor is True
+
+    def test_turning_it_off_during_a_session_is_refused(self) -> None:
+        with pytest.raises(RatchetViolationError, match="VPN and Tor"):
+            check_profile_change(profile(), profile(block_vpn_and_tor=False))
+
+    def test_turning_it_on_during_a_session_is_allowed(self) -> None:
+        check_profile_change(profile(block_vpn_and_tor=False), profile(block_vpn_and_tor=True))
+
+    def test_leaving_it_off_is_allowed(self) -> None:
+        """A profile that never blocked tunnels does not start to."""
+        check_profile_change(profile(block_vpn_and_tor=False), profile(block_vpn_and_tor=False))
+
+    def test_it_survives_a_round_trip(self) -> None:
+        from anchor.engine.profiles import Profile
+
+        original = profile(block_vpn_and_tor=False)
+        assert Profile.from_dict(original.to_dict()).block_vpn_and_tor is False

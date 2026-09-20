@@ -93,6 +93,15 @@ class Profile:
     apps: frozenset[str] = frozenset()
     breaks: BreakSettings = field(default_factory=BreakSettings)
 
+    block_vpn_and_tor: bool = True
+    """Whether a Strict session blocks tunnels (SPEC 8.2, ADR 4).
+
+    On by default, so doing nothing gives the specified behaviour. Turning it
+    off loosens the profile, so the ratchet refuses it during a session: it is
+    a decision taken beforehand, not an exit available in the moment. It has no
+    effect below Strict, where SPEC 7.2 allows VPN and Tor anyway.
+    """
+
     def __post_init__(self) -> None:
         if not self.name.strip():
             raise ValueError("a profile needs a name")
@@ -105,6 +114,7 @@ class Profile:
             "domains": sorted(self.domains),
             "apps": sorted(self.apps),
             "breaks": self.breaks.to_dict(),
+            "block_vpn_and_tor": self.block_vpn_and_tor,
         }
 
     @classmethod
@@ -116,4 +126,5 @@ class Profile:
             domains=frozenset(raw.get("domains", ())),
             apps=frozenset(raw.get("apps", ())),
             breaks=BreakSettings.from_dict(raw.get("breaks", {})),
+            block_vpn_and_tor=bool(raw.get("block_vpn_and_tor", True)),
         )

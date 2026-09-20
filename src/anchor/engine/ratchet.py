@@ -67,6 +67,14 @@ def check_profile_change(before: Profile, after: Profile) -> None:
             "cannot start allowing blocked sites during breaks while a session runs"
         )
 
+    if before.block_vpn_and_tor and not after.block_vpn_and_tor:
+        # ADR 4 makes this a choice, and the ratchet is what keeps it a choice
+        # made beforehand rather than an exit available in the moment.
+        raise RatchetViolationError(
+            "cannot stop blocking VPN and Tor during a session; that is chosen "
+            "before the session starts"
+        )
+
 
 def check_session_change(
     level_before: Level,

@@ -77,8 +77,11 @@ Read these before trusting Anchor with anything important.
   postpone is announced before it starts, shown on the top bar, and covers
   every monitor when it begins — but you can still switch away from it. The
   clock keeps running either way.
-- **VPN and Tor blocking is best effort.** Common protocols and known relays are
-  blocked in Strict sessions; obfuscated tunnels can get through.
+- **VPN and Tor blocking is best effort, and optional.** Strict sessions block
+  the usual VPN ports and known Tor relays, which means a work VPN stops too.
+  You can turn that off per profile, but only before a session starts. Blocking
+  is by port, so a tunnel carried over port 443 looks like ordinary HTTPS and
+  gets through.
 - **One user per machine.** Blocks apply to the whole system.
 - **GNOME on Wayland is the reference desktop.** Other desktops may work but are
   not tested. GNOME on X11 is not supported.

@@ -13,3 +13,4 @@ earlier one.
 | [1](0001-run-m0-spikes-and-the-m1-core-concurrently.md) | Run the Milestone 0 spikes and the Milestone 1 core concurrently | Accepted |
 | [2](0002-what-a-break-can-and-cannot-enforce.md) | What a break can and cannot enforce on Wayland | Accepted |
 | [3](0003-speak-statusnotifieritem-over-dbus.md) | Speak StatusNotifierItem over D-Bus instead of using AppIndicator | Accepted |
+| [4](0004-vpn-and-tor-blocking-is-a-profile-choice.md) | VPN and Tor blocking is a profile choice, on by default | Accepted |
