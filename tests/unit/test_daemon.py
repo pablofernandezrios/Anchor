@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import os
+import pwd
 from pathlib import Path
 
 import pytest
 
 import anchor.blocker.resolved as resolved_module
+from anchor.blocker.apps import AppKind, InstalledApp
 from anchor.blocker.daemon import BlockerDaemon, Lists
-from anchor.engine.paths import Paths
+from anchor.blocker.enforcement import Closure
+from anchor.engine.paths import Paths, Settings
 from anchor.protocol.types import WebMode
 from anchor.system.commands import RecordingRunner, Result
 
@@ -257,3 +261,110 @@ class TestNoticingTheRulesAreGone:
         """With no rules applied there is nothing to have been removed."""
         daemon.check_rules_survive()
         assert not runner.ran("nft list table")
+
+
+class TestApplications:
+    """The daemon's half of application blocking (SPEC 7.1, 9)."""
+
+    def test_the_watcher_starts_with_the_session(self, daemon: BlockerDaemon) -> None:
+        """It must be watching before the grace ends, not after."""
+        daemon.enforce(frozenset(), grace_seconds=120.0)
+        try:
+            assert daemon._watcher is not None  # noqa: SLF001
+        finally:
+            daemon.stop_enforcing()
+
+        assert daemon._watcher is None  # noqa: SLF001
+
+    def test_the_same_watcher_is_kept_across_polls(self, daemon: BlockerDaemon) -> None:
+        daemon.enforce(frozenset(), grace_seconds=120.0)
+        first = daemon._watcher  # noqa: SLF001
+        daemon.enforce(frozenset(), grace_seconds=119.0)
+        try:
+            assert daemon._watcher is first  # noqa: SLF001
+        finally:
+            daemon.stop_enforcing()
+
+    def test_stopping_when_nothing_is_running_is_harmless(self, daemon: BlockerDaemon) -> None:
+        """Every poll without a session calls it."""
+        daemon.stop_enforcing()
+        daemon.stop_enforcing()
+
+    def test_undoing_a_session_stops_enforcing(self, daemon: BlockerDaemon) -> None:
+        daemon.apply(WebMode.BLOCKLIST, frozenset({"youtube.com"}))
+        daemon.enforce(frozenset(), grace_seconds=0.0)
+
+        daemon.undo()
+
+        assert daemon._watcher is None  # noqa: SLF001
+        assert not daemon.enforcer.enforcing
+
+
+class TestReportingApplications:
+    def sent(self, daemon: BlockerDaemon) -> list[tuple[str, dict[str, object]]]:
+        calls: list[tuple[str, dict[str, object]]] = []
+        daemon.tell_engine = lambda request, payload: calls.append((request, payload))  # type: ignore[method-assign]
+        return calls
+
+    def test_the_grace_names_the_applications(self, daemon: BlockerDaemon) -> None:
+        calls = self.sent(daemon)
+
+        daemon.report_grace([_discord()], 120.0)
+
+        assert calls == [("apps.report", {"kind": "grace", "apps": ["Discord"], "seconds": 120})]
+
+    def test_a_closure_says_it_was_already_running(self, daemon: BlockerDaemon) -> None:
+        calls = self.sent(daemon)
+
+        daemon.report_closed([_closure()], "running")
+
+        assert calls == [("apps.report", {"kind": "closed", "apps": ["Discord"]})]
+
+    def test_a_launch_says_so(self, daemon: BlockerDaemon) -> None:
+        """The agent words the two differently, so the engine is told which."""
+        calls = self.sent(daemon)
+
+        daemon.report_closed([_closure()], "launch")
+
+        assert calls == [("apps.report", {"kind": "launch", "apps": ["Discord"]})]
+
+    def test_an_unreachable_engine_is_not_an_error(self, daemon: BlockerDaemon) -> None:
+        """The application is already closed; the notification is not worth a crash."""
+        daemon.tell_engine("apps.report", {"kind": "closed", "apps": ["Discord"]})
+
+
+class TestFindingTheOwnersApplications:
+    def test_the_owners_home_is_used(self, daemon: BlockerDaemon, paths: Paths) -> None:
+        """Root's own home holds none of the user's desktop entries."""
+        paths.settings_file.write_text(Settings(owner_uid=os.getuid()).to_toml(), encoding="utf-8")
+
+        assert daemon.owner_home() == Path(pwd.getpwuid(os.getuid()).pw_dir)
+
+    def test_a_missing_settings_file_is_survivable(
+        self, daemon: BlockerDaemon, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Discovery then falls back, rather than the daemon refusing to run."""
+        with caplog.at_level("WARNING", logger="anchor-blockerd"):
+            assert daemon.owner_home() is None
+
+        assert "home" in caplog.text
+
+    def test_an_owner_uid_with_no_account_is_survivable(
+        self, daemon: BlockerDaemon, paths: Paths
+    ) -> None:
+        paths.settings_file.write_text(Settings(owner_uid=65123).to_toml(), encoding="utf-8")
+
+        assert daemon.owner_home() is None
+
+
+def _discord() -> InstalledApp:
+    return InstalledApp(
+        id="discord.desktop",
+        name="Discord",
+        kind=AppKind.NATIVE,
+        exec_path="/usr/bin/discord",
+    )
+
+
+def _closure() -> Closure:
+    return Closure(app_id="discord.desktop", name="Discord", pids=(100,), killed=False)

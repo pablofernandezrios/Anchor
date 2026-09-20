@@ -26,6 +26,7 @@ from anchor.engine.profiles import Profile
 from anchor.engine.ratchet import check_profile_change
 from anchor.engine.refusal import apply_refusal, remove_refusal
 from anchor.engine.sessions import (
+    GRACE_SECONDS,
     ExitKind,
     Rupture,
     Session,
@@ -217,6 +218,7 @@ class Engine:
             "profile.delete": self._on_profile_delete,
             "policy.get": self._on_policy,
             "blocked.report": self._on_blocked_report,
+            "apps.report": self._on_apps_report,
             "tamper.report": self._on_tamper_report,
         }
 
@@ -355,6 +357,11 @@ class Engine:
                     "active": True,
                     "mode": str(WebMode.ALLOWLIST),
                     "domains": [],
+                    # Nothing can be said about applications: the list of them
+                    # lived in the profile that vanished, and closing every
+                    # application on the machine is not a safe guess.
+                    "apps": [],
+                    "grace_seconds": self._grace_remaining(session),
                     # A profile that vanished must not become a way to keep a
                     # tunnel up either.
                     "block_tunnels": session.level is Level.STRICT,
@@ -366,6 +373,12 @@ class Engine:
                 "active": True,
                 "mode": str(profile.web_mode),
                 "domains": sorted(profile.domains),
+                "apps": sorted(profile.apps),
+                # How long the applications already open still have to save
+                # their work (SPEC 7.1). The engine works it out rather than
+                # the blocker, so that restarting the blocker cannot hand out
+                # a fresh two minutes.
+                "grace_seconds": self._grace_remaining(session),
                 # Two conditions, and the engine owns both. SPEC 7.2 allows VPN
                 # and Tor below Strict, and ADR 4 lets a profile opt out of
                 # blocking them even in Strict.
@@ -391,6 +404,44 @@ class Engine:
         # written to the log (SPEC 13).
         self.emit("blocked.attempt", {"domain": domain, "rule": rule})
         return request.ok({"recorded": True, "total": self.state.session.blocked_attempts})
+
+    def _grace_remaining(self, session: Session) -> float:
+        """Seconds left of the grace this session began with (SPEC 7.1)."""
+        outcome = reconcile(session.anchor, self.clock)
+        elapsed = session.anchor.duration_seconds - outcome.remaining_seconds
+        return max(0.0, GRACE_SECONDS - elapsed)
+
+    def _on_apps_report(self, request: Request) -> Response:
+        """Record what the blocker did about applications (SPEC 7.1, 9).
+
+        The blocker closes them itself, for the same reason it puts the
+        firewall rules back itself: waiting for an instruction would leave a
+        blocked application open meanwhile. What it cannot do is decide what
+        the user should be told, so it reports and the engine publishes.
+        """
+        session = self.state.session
+        if session is None:
+            # The session ended between the kill and the report.
+            return request.ok({"recorded": False})
+
+        kind = str(request.payload["kind"])
+        names = [str(name) for name in request.payload["apps"]]
+        seconds = int(request.payload["seconds"])
+
+        if kind == "grace":
+            # Named applications, and only to the owner's own subscribers, on
+            # the same footing as a blocked domain (SPEC 13).
+            self.emit("apps.grace", {"apps": names, "seconds": seconds})
+            return request.ok({"recorded": True})
+
+        self.state.session = session.with_app_blocks(len(names))
+        self.save()
+        # "launch" means the user opened it during the session and it never
+        # got a window; "closed" means it was already open when the session
+        # began. The same event, because it is the same fact, with the reason
+        # carried so the agent can word it properly.
+        self.emit("apps.closed", {"apps": names, "reason": kind})
+        return request.ok({"recorded": True, "total": self.state.session.app_blocks})
 
     def _on_tamper_report(self, request: Request) -> Response:
         """Record manipulation the blocker noticed (SPEC 7.6).
@@ -434,6 +485,7 @@ class Engine:
             "ends_at": session.anchor.ends_at,
             "remaining_seconds": outcome.remaining_seconds,
             "blocked_attempts": session.blocked_attempts,
+            "app_blocks": session.app_blocks,
             "skips_remaining": self.state.skips_remaining,
             "exit_request": (
                 {

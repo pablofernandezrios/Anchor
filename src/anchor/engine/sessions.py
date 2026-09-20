@@ -38,6 +38,11 @@ DEFAULT_FIRM_WAIT_SECONDS: Final = 15 * 60
 #: The wait built into the valve (SPEC 7.5).
 VALVE_WAIT_SECONDS: Final = 30 * 60
 
+#: How long the applications already open have to save their work when a
+#: session starts (SPEC 7.1). It belongs to the session rather than to the
+#: blocker, so that restarting the blocker cannot hand out a fresh two minutes.
+GRACE_SECONDS: Final = 2 * 60
+
 
 class ExitKind(StrEnum):
     """Why someone is trying to end a session early."""
@@ -147,6 +152,9 @@ class Session:
     phase: SessionPhase = SessionPhase.WORKING
     exit_request: ExitRequest | None = None
     blocked_attempts: int = 0
+    app_blocks: int = 0
+    """Applications closed because this session blocks them (SPEC 13)."""
+
     ruptures: tuple[Rupture, ...] = field(default_factory=tuple)
 
     # -- time -----------------------------------------------------------
@@ -249,6 +257,17 @@ class Session:
     def with_blocked_attempt(self) -> Session:
         return replace(self, blocked_attempts=self.blocked_attempts + 1)
 
+    def with_app_blocks(self, count: int) -> Session:
+        """Count applications this session closed (SPEC 13).
+
+        Kept apart from ``blocked_attempts`` because SPEC 13 asks for blocked
+        attempts by domain *and* by application, and a single number could
+        answer neither question.
+        """
+        if count < 0:
+            raise ValueError("cannot record a negative number of applications")
+        return replace(self, app_blocks=self.app_blocks + count)
+
     def in_phase(self, phase: SessionPhase) -> Session:
         return replace(self, phase=phase)
 
@@ -265,6 +284,7 @@ class Session:
             "phase": str(self.phase),
             "exit_request": self.exit_request.to_dict() if self.exit_request else None,
             "blocked_attempts": self.blocked_attempts,
+            "app_blocks": self.app_blocks,
             "ruptures": [rupture.to_dict() for rupture in self.ruptures],
         }
 
@@ -281,6 +301,7 @@ class Session:
             phase=SessionPhase(raw.get("phase", SessionPhase.WORKING)),
             exit_request=ExitRequest.from_dict(exit_raw) if exit_raw else None,
             blocked_attempts=int(raw.get("blocked_attempts", 0)),
+            app_blocks=int(raw.get("app_blocks", 0)),
             ruptures=tuple(Rupture.from_dict(item) for item in raw.get("ruptures", ())),
         )
 

@@ -18,12 +18,15 @@ on levels, the ratchet or when a session ends; it asks, and it obeys.
 from __future__ import annotations
 
 import logging
+import pwd
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 
+from anchor.blocker.apps import InstalledApp, discover
 from anchor.blocker.attempts import AttemptTracker
 from anchor.blocker.constants import JOURNAL_NAME, RESOLVED_DROP_IN, RESOLVER_PORT
+from anchor.blocker.enforcement import AppEnforcer, Closure
 from anchor.blocker.journal import Journal
 from anchor.blocker.matcher import Policy, load_domain_file
 from anchor.blocker.policies import apply_policies
@@ -45,8 +48,9 @@ from anchor.blocker.rules import (
     rules_loaded,
     split_addresses,
 )
+from anchor.blocker.watcher import ProcessWatcher
 from anchor.cli.client import EngineClient, EngineUnreachableError
-from anchor.engine.paths import Paths
+from anchor.engine.paths import Paths, Settings
 from anchor.protocol.types import WebMode
 from anchor.system.commands import Runner, run
 
@@ -117,6 +121,13 @@ class BlockerDaemon:
         self._stopping = threading.Event()
         self._resolver: Resolver | None = None
 
+        self.enforcer = AppEnforcer(
+            catalogue=self.installed_apps,
+            on_grace=self.report_grace,
+            on_closed=self.report_closed,
+        )
+        self._watcher: ProcessWatcher | None = None
+
     # -- what the resolver asks --------------------------------------------
 
     def current_policy(self) -> Policy | None:
@@ -135,6 +146,54 @@ class BlockerDaemon:
             # The engine is restarting. The block already happened; losing one
             # statistic is not worth failing a lookup over.
             log.debug("could not report a blocked attempt; the engine is unreachable")
+
+    # -- what the enforcer asks and reports ---------------------------------
+
+    def installed_apps(self) -> list[InstalledApp]:
+        """Every application installed for the owner (SPEC 9).
+
+        The daemon runs as root, so the owner's own ``~/.local`` entries have
+        to be asked for by name; discovering root's would find nothing the
+        user has installed for themselves.
+        """
+        return discover(home=self.owner_home())
+
+    def owner_home(self) -> Path | None:
+        try:
+            settings = Settings.load(self.paths.settings_file)
+            return Path(pwd.getpwuid(settings.owner_uid).pw_dir)
+        except (FileNotFoundError, ValueError, KeyError) as error:
+            log.warning("could not find the owner's home directory: %s", error)
+            return None
+
+    def report_grace(self, apps: list[InstalledApp], seconds: float) -> None:
+        """Tell the engine what is about to close, so it can warn (SPEC 7.1)."""
+        self.tell_engine(
+            "apps.report",
+            {
+                "kind": "grace",
+                "apps": [app.name for app in apps],
+                "seconds": int(seconds),
+            },
+        )
+
+    def report_closed(self, closures: list[Closure], reason: str) -> None:
+        self.tell_engine(
+            "apps.report",
+            {
+                "kind": "launch" if reason == "launch" else "closed",
+                "apps": [closure.name for closure in closures],
+            },
+        )
+
+    def tell_engine(self, request: str, payload: dict[str, object]) -> None:
+        try:
+            with EngineClient(self.paths.engine_socket, timeout=2.0) as client:
+                client.call(request, payload)
+        except (EngineUnreachableError, OSError):
+            # The engine is restarting. The application is already closed;
+            # losing the notification is not worth failing over.
+            log.debug("could not send %s; the engine is unreachable", request)
 
     @property
     def applied(self) -> bool:
@@ -158,6 +217,7 @@ class BlockerDaemon:
         if self._resolver is not None:
             self._resolver.stop()
             self._resolver = None
+        self.stop_enforcing()
 
     def run(self) -> None:
         """Poll the engine until stopped, applying and undoing as it says."""
@@ -201,7 +261,14 @@ class BlockerDaemon:
                 frozenset(response.result.get("domains", ())),
                 block_tunnels=bool(response.result.get("block_tunnels", False)),
             )
-        elif self._applied:
+            self.enforce(
+                frozenset(response.result.get("apps", ())),
+                float(response.result.get("grace_seconds", 0.0)),
+            )
+            return
+
+        self.stop_enforcing()
+        if self._applied:
             self.undo()
 
     def check_rules_survive(self) -> None:
@@ -232,6 +299,28 @@ class BlockerDaemon:
                 client.call("tamper.report", {"kind": kind, "detail": detail})
         except (EngineUnreachableError, OSError):
             log.warning("could not report tampering; the engine is unreachable")
+
+    # -- applications ---------------------------------------------------------
+
+    def enforce(self, app_ids: frozenset[str], grace_seconds: float) -> None:
+        """Keep the session's applications closed (SPEC 7.1, 9).
+
+        The watcher starts with the session rather than with the first block,
+        so that its baseline is taken while the grace is still running: an
+        application opened during those two minutes is then a launch, and not
+        something that looks as if it had been running all along.
+        """
+        if self._watcher is None:
+            self._watcher = ProcessWatcher(self.enforcer.on_launch)
+            self._watcher.start()
+        self.enforcer.update(app_ids, grace_seconds)
+
+    def stop_enforcing(self) -> None:
+        """Let the applications alone again. Safe to call when idle."""
+        if self._watcher is not None:
+            self._watcher.stop()
+            self._watcher = None
+        self.enforcer.stop()
 
     # -- the two transitions -------------------------------------------------
 
@@ -311,6 +400,7 @@ class BlockerDaemon:
 
     def undo(self) -> None:
         """Put everything back when the session ends."""
+        self.stop_enforcing()
         report = restore_everything(
             self.journal, runner=self.runner, resolved_drop_in=self.resolved_drop_in
         )

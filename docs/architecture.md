@@ -41,7 +41,7 @@ src/anchor/
                phrases, state, core, service, main
   blocker/     journal, restore, constants, commands, dnswire, matcher,
                recent, attempts, resolver, rules, resolved, policies,
-               apps, processes, watcher, daemon, main
+               apps, processes, watcher, enforcement, daemon, main
   agent/       empty
   gui/         empty
   cli/         durations, client, main
@@ -236,6 +236,37 @@ the netlink messages are packed and unpacked by hand.
 A handler that raises is logged and the watch continues: missing every later
 launch would be a far worse failure than missing this one.
 
+### The two minutes, and after them
+
+`enforcement.py` does the closing, and the two moments are deliberately not the
+same. At the start of a session the applications already open may hold work
+nobody has saved, so SPEC 7.1 gives them two minutes and a notification, then
+`SIGTERM`, then `SIGKILL` ten seconds later. Anchor is friction, not a trap:
+taking somebody's unsaved document is not friction, it is damage. Once the
+grace has passed, SPEC 9 kills a blocked application immediately on launch,
+because a program that has just started has nothing to save.
+
+An application opened *during* the grace is left alone until the grace ends.
+The two minutes are a promise about the machine, not about a list of process
+identifiers, and a browser that restarts a helper mid-save would otherwise lose
+the very work the grace exists to protect.
+
+The deadline belongs to the engine, which sends the seconds remaining with
+every poll. Letting the blocker time it itself would make restarting the
+blocker worth a fresh two minutes.
+
+Every process of an application is signalled before any of them is waited on,
+so closing five windows takes ten seconds rather than fifty, and the wait
+happens on its own thread: the poll loop and the watcher both have to keep
+listening while it runs. Liveness is read from `/proc/<pid>/stat` rather than
+asked of the kernel with signal 0, because a zombie answers signal 0 and would
+hold the escalation open for a process that has already died.
+
+What was closed is reported to the engine, which counts it (SPEC 13 asks for
+blocked attempts by application as well as by domain) and publishes an event
+carrying whether the application was already running or had just been launched,
+so the agent can word the notification properly.
+
 ## Anti-evasion
 
 Everything here is friction rather than a lock, as P2 requires, and each piece
@@ -267,6 +298,6 @@ mean blocking the web.
 
 ## Not built yet
 
-Enforcing application blocks, breaks, schedules, statistics, the interface
-and the packages. The milestones in the build plan cover them, and
+Categories that bundle an application with its domains, breaks, schedules,
+statistics, the interface and the packages. The milestones in the build plan cover them, and
 `docs/spikes/` records what was learned before building each one.

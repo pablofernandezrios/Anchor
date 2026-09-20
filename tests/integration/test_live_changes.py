@@ -305,3 +305,101 @@ class TestWhenTunnelsAreBlocked:
         del engine.profiles["Study"]
 
         assert self.policy(client)["block_tunnels"] is True
+
+
+class TestWhatTheBlockerIsToldAboutApplications:
+    """SPEC 7.1 and 9: which applications, and how long they have left."""
+
+    def policy(self, client: EngineClient) -> dict[str, Any]:
+        return client.call("policy.get").result
+
+    def test_the_profiles_applications_are_named(self, client: EngineClient) -> None:
+        start(client)
+        assert self.policy(client)["apps"] == ["discord"]
+
+    def test_a_session_starts_with_the_full_two_minutes(self, client: EngineClient) -> None:
+        start(client)
+        assert self.policy(client)["grace_seconds"] == 120
+
+    def test_the_grace_runs_down_with_the_session(
+        self, client: EngineClient, clock: FakeClock
+    ) -> None:
+        start(client)
+        clock.advance(90)
+
+        assert self.policy(client)["grace_seconds"] == 30
+
+    def test_it_reaches_zero_and_stays_there(self, client: EngineClient, clock: FakeClock) -> None:
+        start(client)
+        clock.advance(600)
+
+        assert self.policy(client)["grace_seconds"] == 0
+
+    def test_restarting_the_blocker_does_not_hand_out_a_fresh_grace(
+        self, client: EngineClient, clock: FakeClock
+    ) -> None:
+        """The engine owns the deadline, so asking again cannot reset it."""
+        start(client)
+        clock.advance(119)
+
+        first = self.policy(client)["grace_seconds"]
+        second = self.policy(client)["grace_seconds"]
+
+        assert first == second == 1
+
+    def test_a_missing_profile_names_no_applications(
+        self, client: EngineClient, engine: Engine
+    ) -> None:
+        """Closing every application on the machine is not a safe guess."""
+        start(client)
+        del engine.profiles["Study"]
+
+        assert self.policy(client)["apps"] == []
+
+    def test_an_application_added_mid_session_appears(self, client: EngineClient) -> None:
+        start(client)
+        client.call("profile.edit", {"name": "Study", "add_apps": ["spotify"]})
+
+        assert self.policy(client)["apps"] == ["discord", "spotify"]
+
+
+class TestReportingApplications:
+    def test_the_grace_warning_is_published(self, client: EngineClient) -> None:
+        start(client)
+
+        response = client.call(
+            "apps.report", {"kind": "grace", "apps": ["Discord"], "seconds": 120}
+        )
+
+        assert response.ok
+        assert response.result == {"recorded": True}
+
+    def test_a_closed_application_is_counted(self, client: EngineClient) -> None:
+        """SPEC 13 asks for blocked attempts by application as well as by domain."""
+        start(client)
+
+        client.call("apps.report", {"kind": "closed", "apps": ["Discord", "Spotify"]})
+        response = client.call("apps.report", {"kind": "launch", "apps": ["Discord"]})
+
+        assert response.result["total"] == 3
+
+    def test_the_count_is_kept_apart_from_blocked_domains(self, client: EngineClient) -> None:
+        start(client)
+        client.call("apps.report", {"kind": "closed", "apps": ["Discord"]})
+
+        status = client.call("status.get").result
+        assert status["app_blocks"] == 1
+        assert status["blocked_attempts"] == 0
+
+    def test_a_report_with_no_session_is_not_an_error(self, client: EngineClient) -> None:
+        """The session can end between the kill and the report."""
+        response = client.call("apps.report", {"kind": "closed", "apps": ["Discord"]})
+
+        assert response.ok
+        assert response.result == {"recorded": False}
+
+    def test_an_unknown_kind_is_refused(self, client: EngineClient) -> None:
+        start(client)
+        response = client.call("apps.report", {"kind": "banished", "apps": ["Discord"]})
+
+        assert not response.ok

@@ -92,6 +92,11 @@ REQUEST_SCHEMAS: Final[dict[str, Schema]] = {
     # Spoken by anchor-blockerd rather than by a person.
     "policy.get": EMPTY,
     "blocked.report": Schema(domain=Field(str), rule=Field(str)),
+    "apps.report": Schema(
+        kind=Field(str, choices=("grace", "closed", "launch")),
+        apps=Field(list, item_kind=str),
+        seconds=Field(int, required=False, default=0, minimum=0),
+    ),
     "tamper.report": Schema(
         kind=Field(str, choices=("rules_missing", "resolver_bypassed", "policy_removed")),
         detail=Field(str),
@@ -121,6 +126,8 @@ EVENT_TYPES: Final = frozenset(
         "valve.withdrawn",
         "rupture.recorded",
         "blocked.attempt",
+        "apps.grace",
+        "apps.closed",
         "config.changed",
         "profile.changed",
     }
