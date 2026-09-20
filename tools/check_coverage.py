@@ -22,6 +22,7 @@ GATED_SUFFIXES = (
     "anchor/engine/",
     "anchor/protocol/",
     "anchor/blocker/",
+    "anchor/system/",
 )
 
 

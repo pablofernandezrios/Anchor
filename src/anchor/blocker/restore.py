@@ -20,7 +20,6 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from anchor.blocker.commands import Result, Runner, run
 from anchor.blocker.constants import (
     NFT_FAMILY,
     NFT_TABLE,
@@ -30,6 +29,7 @@ from anchor.blocker.constants import (
     SYSTEMD_RUNTIME_DIR,
 )
 from anchor.blocker.journal import Journal
+from anchor.system.commands import Result, Runner, run
 
 log = logging.getLogger("anchor-blockerd")
 

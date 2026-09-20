@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from anchor.blocker.commands import RecordingRunner, Result
 from anchor.blocker.journal import Journal
 from anchor.blocker.resolved import (
     NetworkState,
@@ -15,6 +14,7 @@ from anchor.blocker.resolved import (
     is_available,
     read_state,
 )
+from anchor.system.commands import RecordingRunner, Result
 
 STATUS = """\
 Global

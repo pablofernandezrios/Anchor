@@ -17,6 +17,10 @@ DEFAULT_ETC: Final = Path("/etc/anchor")
 DEFAULT_STATE_DIR: Final = Path("/var/lib/anchor")
 DEFAULT_RUNTIME_DIR: Final = Path("/run/anchor")
 
+#: Where systemd reads runtime unit drop-ins, including the one that
+#: refuses a manual stop during a session (SPEC 5.3).
+DEFAULT_SYSTEMD_RUNTIME_DIR: Final = Path("/run/systemd/system")
+
 #: Set this to a directory to relocate the whole tree during development.
 ROOT_ENV_VAR: Final = "ANCHOR_ROOT"
 
@@ -31,6 +35,7 @@ class Paths:
     etc_dir: Path = DEFAULT_ETC
     state_dir: Path = DEFAULT_STATE_DIR
     runtime_dir: Path = DEFAULT_RUNTIME_DIR
+    systemd_runtime_dir: Path = DEFAULT_SYSTEMD_RUNTIME_DIR
 
     @classmethod
     def resolve(cls, root: str | os.PathLike[str] | None = None) -> Self:
@@ -44,10 +49,14 @@ class Paths:
         if root is None:
             return cls()
         base = Path(root)
+        # Every path moves, including systemd's. A relocated tree that still
+        # wrote drop-ins into the real /run/systemd would let a test, or a
+        # developer, make the machine refuse to stop its own services.
         return cls(
             etc_dir=base / "etc" / "anchor",
             state_dir=base / "var" / "lib" / "anchor",
             runtime_dir=base / "run" / "anchor",
+            systemd_runtime_dir=base / "run" / "systemd" / "system",
         )
 
     @property

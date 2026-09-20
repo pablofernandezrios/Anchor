@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from anchor.engine.paths import Paths, Settings
 from anchor.engine.profiles import Profile
+from anchor.engine.refusal import apply_refusal, remove_refusal
 from anchor.engine.sessions import (
     ExitKind,
     Rupture,
@@ -50,9 +52,13 @@ class Engine:
         *,
         clock: Clock | None = None,
         policy: SessionPolicy | None = None,
+        systemd_runtime_dir: Path | None = None,
     ) -> None:
         self.paths = paths
         self.settings = settings
+        self.systemd_runtime_dir = (
+            systemd_runtime_dir if systemd_runtime_dir is not None else paths.systemd_runtime_dir
+        )
         self.clock: Clock = clock or SystemClock()
         self.policy = policy or SessionPolicy()
         self.state = EngineState()
@@ -107,6 +113,26 @@ class Engine:
             self.state = EngineState.from_dict(stored.data)
 
         self.tick()
+        self._match_refusal()
+
+    def _match_refusal(self) -> None:
+        """Keep the stop refusal in step with whether a session is running.
+
+        Called on load as well as on the transitions, because /run is cleared
+        by a reboot: a session that survived one needs its drop-ins written
+        again, and a machine that crashed mid-session needs the stale ones
+        removed (SPEC 5.3).
+        """
+        try:
+            if self.state.session is not None:
+                apply_refusal(runtime_dir=self.systemd_runtime_dir)
+            else:
+                remove_refusal(runtime_dir=self.systemd_runtime_dir)
+        except OSError as error:
+            # Friction, not a lock. A session that runs without it is still a
+            # session; one that refuses to start because systemd would not
+            # cooperate would be worse than the problem.
+            log.warning("could not adjust the stop refusal: %s", error)
 
     def save(self) -> None:
         self._state_store.save(self.state.to_dict())
@@ -306,6 +332,7 @@ class Engine:
         )
         self.state.session = session
         self.save()
+        self._match_refusal()
 
         self.emit("session.started", self.status())
         log.info(
@@ -385,6 +412,7 @@ class Engine:
             return
         self.state.session = None
         self.save()
+        self._match_refusal()
         log.info("session %s ended: %s", session.id, reason)
         self.emit(
             "session.ended",

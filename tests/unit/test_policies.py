@@ -8,10 +8,10 @@ from typing import Any
 
 import pytest
 
-from anchor.blocker.commands import RecordingRunner
 from anchor.blocker.journal import Journal
 from anchor.blocker.policies import apply_policies
 from anchor.blocker.restore import restore_everything
+from anchor.system.commands import RecordingRunner
 
 
 @pytest.fixture

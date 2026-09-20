@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from anchor.blocker.commands import RecordingRunner, Result
 from anchor.blocker.journal import Journal
 from anchor.blocker.rules import (
     FirewallPlan,
@@ -16,6 +15,7 @@ from anchor.blocker.rules import (
     load_addresses,
     split_addresses,
 )
+from anchor.system.commands import RecordingRunner, Result
 
 
 @pytest.fixture

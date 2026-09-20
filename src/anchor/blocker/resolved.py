@@ -31,13 +31,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
-from anchor.blocker.commands import Runner, run
 from anchor.blocker.constants import (
     RESOLVED_DROP_IN,
     RESOLVER_ADDRESS,
     RESOLVER_PORT,
 )
 from anchor.blocker.journal import Journal
+from anchor.system.commands import Runner, run
 
 log = logging.getLogger("anchor-blockerd")
 

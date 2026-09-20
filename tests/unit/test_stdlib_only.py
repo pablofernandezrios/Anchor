@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 # Packages that run as root and are therefore restricted (SPEC 5.1, 5.4).
-ROOT_PACKAGES = ("protocol", "engine", "blocker")
+ROOT_PACKAGES = ("protocol", "engine", "blocker", "system")
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "anchor"
 

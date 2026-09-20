@@ -23,7 +23,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from anchor.blocker.attempts import AttemptTracker
-from anchor.blocker.commands import Runner, run
 from anchor.blocker.constants import JOURNAL_NAME, RESOLVED_DROP_IN, RESOLVER_PORT
 from anchor.blocker.journal import Journal
 from anchor.blocker.matcher import Policy, load_domain_file
@@ -47,6 +46,7 @@ from anchor.blocker.rules import (
 from anchor.cli.client import EngineClient, EngineUnreachableError
 from anchor.engine.paths import Paths
 from anchor.protocol.types import WebMode
+from anchor.system.commands import Runner, run
 
 log = logging.getLogger("anchor-blockerd")
 

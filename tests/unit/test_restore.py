@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from anchor.blocker.commands import RecordingRunner, Result
 from anchor.blocker.journal import Journal
 from anchor.blocker.restore import restore_everything
+from anchor.system.commands import RecordingRunner, Result
 
 
 @pytest.fixture

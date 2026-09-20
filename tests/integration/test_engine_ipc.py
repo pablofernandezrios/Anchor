@@ -37,12 +37,15 @@ def clock() -> FakeClock:
 
 
 @pytest.fixture
-def engine(paths: Paths, clock: FakeClock) -> Engine:
+def engine(paths: Paths, clock: FakeClock, tmp_path: Path) -> Engine:
     engine = Engine(
         paths,
         Settings(owner_uid=os.getuid()),
         clock=clock,
         policy=SessionPolicy(),
+        # Never the real /run/systemd: these tests must not be able to make
+        # the machine they run on refuse to stop its own services.
+        systemd_runtime_dir=tmp_path / "run" / "systemd" / "system",
     )
     engine.load()
     return engine
@@ -238,7 +241,12 @@ def test_a_session_survives_the_engine_restarting(
     )
 
     clock.advance(45 * 60)
-    revived = Engine(paths, Settings(owner_uid=os.getuid()), clock=clock)
+    revived = Engine(
+        paths,
+        Settings(owner_uid=os.getuid()),
+        clock=clock,
+        systemd_runtime_dir=paths.state_dir / "fake-runtime",
+    )
     revived.load()
 
     status = revived.status()
@@ -268,8 +276,91 @@ def test_editing_state_by_hand_is_a_rupture_and_does_not_free_the_session(
     assert tampered != raw
     paths.state_file.write_text(tampered, encoding="utf-8")
 
-    revived = Engine(paths, Settings(owner_uid=os.getuid()), clock=clock)
+    revived = Engine(
+        paths,
+        Settings(owner_uid=os.getuid()),
+        clock=clock,
+        systemd_runtime_dir=paths.state_dir / "fake-runtime",
+    )
     revived.load()
 
     assert revived.status()["active"] is True
     assert [rupture["kind"] for rupture in revived.state.ruptures] == ["tampering"]
+
+
+class TestRefusingAManualStop:
+    """SPEC 5.3: the root units cannot be stopped by hand mid-session."""
+
+    def test_starting_a_session_refuses_stops(self, client: EngineClient, engine: Engine) -> None:
+        from anchor.engine.refusal import is_applied
+
+        assert not is_applied(engine.systemd_runtime_dir)
+
+        client.call(
+            "session.start",
+            {"profile": "Study", "duration_seconds": HOUR, "level": "soft"},
+        )
+        assert is_applied(engine.systemd_runtime_dir)
+
+    def test_ending_a_session_allows_them_again(
+        self, client: EngineClient, engine: Engine, clock: FakeClock
+    ) -> None:
+        """Otherwise the package could not be removed (SPEC 7.6)."""
+        from anchor.engine.refusal import is_applied
+
+        client.call(
+            "session.start",
+            {"profile": "Study", "duration_seconds": HOUR, "level": "soft"},
+        )
+        clock.advance(HOUR + 1)
+        client.call("status.get")
+
+        assert not is_applied(engine.systemd_runtime_dir)
+
+    def test_a_session_surviving_a_reboot_gets_them_back(
+        self, client: EngineClient, paths: Paths, clock: FakeClock, engine: Engine
+    ) -> None:
+        """/run is cleared by a reboot, so they have to be written again."""
+        from anchor.engine.refusal import is_applied
+
+        client.call(
+            "session.start",
+            {"profile": "Study", "duration_seconds": 4 * HOUR, "level": "firm"},
+        )
+
+        # A reboot: the runtime directory is gone, the session is not.
+        import shutil
+
+        shutil.rmtree(engine.systemd_runtime_dir, ignore_errors=True)
+        assert not is_applied(engine.systemd_runtime_dir)
+
+        revived = Engine(
+            paths,
+            Settings(owner_uid=os.getuid()),
+            clock=clock,
+            systemd_runtime_dir=engine.systemd_runtime_dir,
+        )
+        revived.load()
+
+        assert revived.status()["active"] is True
+        assert is_applied(engine.systemd_runtime_dir)
+
+    def test_a_stale_refusal_is_cleared_on_startup(
+        self, paths: Paths, clock: FakeClock, tmp_path: Path
+    ) -> None:
+        """A crash mid-session must not leave the services unstoppable."""
+        from anchor.engine.refusal import apply_refusal, is_applied
+
+        runtime = tmp_path / "stale-runtime"
+        apply_refusal(runtime_dir=runtime)
+        assert is_applied(runtime)
+
+        engine = Engine(
+            paths,
+            Settings(owner_uid=os.getuid()),
+            clock=clock,
+            systemd_runtime_dir=runtime,
+        )
+        engine.load()
+
+        assert not is_applied(runtime)

@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 
 import anchor.blocker.resolved as resolved_module
-from anchor.blocker.commands import RecordingRunner, Result
 from anchor.blocker.daemon import BlockerDaemon, Lists
 from anchor.engine.paths import Paths
 from anchor.protocol.types import WebMode
+from anchor.system.commands import RecordingRunner, Result
 
 STATUS = """\
 Link 2 (eth0)

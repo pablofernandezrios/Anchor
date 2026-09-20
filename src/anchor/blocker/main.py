@@ -66,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.restore:
         journal = Journal(paths.state_dir / JOURNAL_NAME)
-        report = restore_everything(journal)
+        report = restore_everything(journal, systemd_runtime_dir=paths.systemd_runtime_dir)
         print(report.summary())
         for problem in report.problems:
             print(f"could not undo: {problem}", file=sys.stderr)
