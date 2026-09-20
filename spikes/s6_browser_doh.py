@@ -18,6 +18,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from lib import SpikeReport, Verdict, have, main, restored_file, run
 
@@ -191,7 +192,89 @@ def _report_snap_confinement(report: SpikeReport) -> None:
     )
 
 
+SNAP_CHECK = """
+The policy is now in place. To confirm the Snap Firefox actually reads it:
+
+  1. Open Firefox   (the Snap one: `snap run firefox`, or the dock icon)
+  2. Go to          about:policies
+  3. On the "Active" tab, look for:
+
+         DNSOverHTTPS    {"Enabled": false, "Locked": true}
+
+     If it is there, the Snap reads /etc/firefox/policies and SPEC 8.2 holds.
+     If the Active tab is empty, or has no DNSOverHTTPS entry, it does not,
+     and that is the answer we need.
+
+  4. Check the "Errors" tab too. Anything there means the file was read but
+     not understood, which is a different problem from not being read at all.
+
+  5. Cross-check at about:preferences#privacy, under "Enable DNS over HTTPS":
+     it should be off and greyed out, with a note that your organisation
+     controls it.
+
+Leave Firefox open while you look. Nothing is being blocked right now: this
+writes the policy only, no firewall rules and no resolver.
+"""
+
+
+def snap_check() -> int:
+    """Write the Firefox policy, wait to be told, then take it away again.
+
+    The ordinary spike restores every file before it exits, which is correct
+    and makes this one check impossible: the policy is gone before a browser
+    could read it. So this mode holds the file in place until you say you are
+    done, and restores it even if you interrupt it.
+    """
+    if os.geteuid() != 0:
+        print("this needs root: it writes /etc/firefox/policies/policies.json", file=sys.stderr)
+        return 2
+
+    target = Path("/etc/firefox/policies/policies.json")
+    existed = target.exists()
+    original = target.read_text(encoding="utf-8") if existed else None
+
+    try:
+        merged: dict[str, Any] = {}
+        if original:
+            try:
+                loaded = json.loads(original)
+                if isinstance(loaded, dict):
+                    merged = loaded
+            except json.JSONDecodeError:
+                print("note: the existing policy file is not valid JSON; writing a fresh one")
+
+        policies = merged.get("policies")
+        if not isinstance(policies, dict):
+            policies = {}
+        policies.update(_policy_for("firefox")["policies"])  # type: ignore[index]
+        merged["policies"] = policies
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(merged, indent=2) + "\\n", encoding="utf-8")
+
+        print(SNAP_CHECK)
+        input("Press Enter when you have looked, and the policy will be removed: ")
+    finally:
+        if existed and original is not None:
+            target.write_text(original, encoding="utf-8")
+            print(f"restored {target} as it was")
+        else:
+            target.unlink(missing_ok=True)
+            for parent in (target.parent, target.parent.parent):
+                try:
+                    if parent.is_dir() and not any(parent.iterdir()):
+                        parent.rmdir()
+                except OSError:
+                    break
+            print(f"removed {target}")
+
+    return 0
+
+
 if __name__ == "__main__":
+    if "--snap-check" in sys.argv:
+        raise SystemExit(snap_check())
+
     raise SystemExit(
         main(
             spike,

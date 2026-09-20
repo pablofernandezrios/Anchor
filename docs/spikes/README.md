@@ -15,7 +15,7 @@ on a desktop VM.
 | 3 | Netlink proc connector | CI VM | **Works** |
 | 4 | StatusNotifier/AppIndicator on GNOME | Desktop VM | **Works** over D-Bus, no AppIndicator library ([ADR 3](../adr/0003-speak-statusnotifieritem-over-dbus.md)) |
 | 5 | Fullscreen break overlay on Wayland | Desktop VM | **Works** on one display; multi-monitor untested. Limits settled by [ADR 2](../adr/0002-what-a-break-can-and-cannot-enforce.md) |
-| 6 | Browser DoH policy paths | Desktop VM | Firefox confirmed; **Snap DoH and the Chromium family still open** |
+| 6 | Browser DoH policy paths | Desktop VM | Firefox paths confirmed; **Snap DoH check is one command away** |
 | 7 | Runtime `RefuseManualStop` drop-in | CI VM | **Works** |
 
 **Nothing contradicts the specification.** Two points needed decisions and
@@ -181,6 +181,11 @@ with Gio — icon, title, and `XAyatanaLabel` for the remaining time — was
 accepted by the watcher, and the watcher listed the item back. No GTK at all is
 involved in reaching the bus.
 
+**And the label renders.** The owner confirmed that the top bar showed `2:14`
+beside the icon, not the icon alone. So the indicator can look like the
+approved mockup, and SPEC 14.1's "icon plus remaining time" is achievable as
+drawn rather than as a compromise.
+
 So the indicator stays inside the GTK4 agent as SPEC 5.1 describes,
 `gir1.2-ayatanaappindicator3-0.1` leaves the dependency lists, and no GTK3 is
 needed anywhere in Anchor. Recorded as
@@ -233,9 +238,19 @@ only what the documentation claims.
 **The open question is the Snap.** Both Firefox builds are present and both are
 supposed to read `/etc/firefox/policies`, but a confined Snap reading `/etc` is
 exactly the assumption SPEC 8.2 rests on, and the spike cannot prove it from
-the outside. It needs one manual check: with the policy written, open
-`about:policies` in the Snap Firefox and confirm `DNSOverHTTPS` shows as locked
-off.
+the outside. It needs one manual check, and the ordinary spike cannot do it: that spike
+restores every file before it exits, so the policy is gone before a browser
+could read it. There is a mode for exactly this, which writes the policy, waits
+to be told, and takes it away again:
+
+```sh
+sudo python3 spikes/s6_browser_doh.py --snap-check
+```
+
+Then in the Snap Firefox, `about:policies` → **Active** should list
+`DNSOverHTTPS` as `{"Enabled": false, "Locked": true}`. An empty Active tab, or
+one without that entry, is the answer that matters: it would mean the Snap does
+not read `/etc/firefox/policies`.
 
 Until that is confirmed, **Snap Firefox is assumed able to bypass Anchor
 through DoH**. That is not fatal to Milestone 2: the nftables rules block the
