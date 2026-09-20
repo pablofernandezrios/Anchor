@@ -41,7 +41,7 @@ src/anchor/
                phrases, state, core, service, main
   blocker/     journal, restore, constants, commands, dnswire, matcher,
                recent, attempts, resolver, rules, resolved, policies,
-               daemon, main
+               apps, processes, watcher, daemon, main
   agent/       empty
   gui/         empty
   cli/         durations, client, main
@@ -200,6 +200,42 @@ Nothing that can break networking outlives Anchor.
   unsigned on purpose: uninstalling is always allowed, and an integrity check
   could only refuse to give someone their machine back.
 
+## Application blocking
+
+Three questions, answered by three modules, because each has a different way of
+being wrong.
+
+**What is installed?** `apps.py` reads `.desktop` entries from the system and
+user directories, including the ones Snap and Flatpak export. An entry gives a
+name, an icon and a command; the command is stripped of its field codes and any
+`env VAR=value` prefix, and then resolved to an absolute path. Resolving it at
+discovery time is deliberate: entries commonly say `vim` rather than
+`/usr/bin/vim`, and a bare name cannot be compared against a running process, so
+an unresolved entry would quietly never match anything.
+
+**Is this process that application?** `processes.py` compares the executable
+behind `/proc/<pid>/exe` and, for sandboxed applications, the cgroup:
+`snap.<name>.` for a Snap, `app-flatpak-<id>-` for a Flatpak. A sandboxed
+application is matched by its cgroup alone, because every Flatpak runs through
+the same wrapper binary and the executable would match all of them. The process
+name is never used, as SPEC 9 requires: copying a binary under another name
+changes the name and not the file.
+
+**Has something just started?** `watcher.py` subscribes to the kernel's process
+connector over netlink and reports each exec. Spike 3 measured that event
+arriving 0.8 ms after the launch, against up to two seconds for polling, and for
+a blocked application that is the difference between a window that never appears
+and one the user gets to look at. Subscribing needs `CAP_NET_ADMIN` and a kernel
+built with `CONFIG_PROC_EVENTS`, so when it is refused the watcher says so once
+and polls `/proc` every two seconds instead. Callers cannot tell the difference
+beyond the delay. The baseline for polling is taken before `start()` returns,
+so an application opened immediately afterwards counts as a launch rather than
+as something that was already running. Only the standard library is used, so
+the netlink messages are packed and unpacked by hand.
+
+A handler that raises is logged and the watch continues: missing every later
+launch would be a far worse failure than missing this one.
+
 ## Anti-evasion
 
 Everything here is friction rather than a lock, as P2 requires, and each piece
@@ -231,6 +267,6 @@ mean blocking the web.
 
 ## Not built yet
 
-Web blocking, application blocking, breaks, schedules, statistics, the
-interface and the packages. The milestones in the build plan cover them, and
+Enforcing application blocks, breaks, schedules, statistics, the interface
+and the packages. The milestones in the build plan cover them, and
 `docs/spikes/` records what was learned before building each one.
