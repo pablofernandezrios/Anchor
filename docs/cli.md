@@ -99,11 +99,52 @@ $ anchor valve phrase         # type the phrase; prompts if not given
 The phrase is generated fresh every time. The interface disables pasting; a
 terminal cannot, so the command simply reads what you type.
 
+### `anchor profile list|show|create|edit|delete`
+
+The named sets of rules a session uses.
+
+```
+$ anchor profile list
+Study
+Work
+
+$ anchor profile show Study
+Study · blocklist
+  Domains: reddit.com, youtube.com
+  Apps: discord
+  Breaks: 50/10 · overlay · moderate
+```
+
+Editing says what to add and what to take away, rather than replacing a list:
+
+```
+anchor profile edit Study --add-domain x.com --add-app steam
+anchor profile edit Study --remove-domain youtube.com
+anchor profile edit Study --mode allowlist
+anchor profile edit Study --no-block-vpn
+```
+
+**While a session is running, only stricter changes are accepted** (SPEC 7.4).
+Adding domains, apps and categories is fine. Removing anything, switching an
+allowlist back to a blocklist, and turning off VPN blocking are refused with
+`RATCHET_VIOLATION` and exit code 4, and nothing is written:
+
+```
+$ anchor profile edit Study --remove-domain youtube.com
+anchor: cannot unblock youtube.com during a session
+$ echo $?
+4
+```
+
+A profile a session is enforcing cannot be deleted either. A profile nothing is
+using can be edited and deleted freely, because there is no way to move a
+running session onto it.
+
 ### Planned
 
-`anchor skip`, `anchor profile`, `anchor category`, `anchor schedule`,
-`anchor stats`, `anchor config` and `anchor doctor` are specified in SPEC 15
-and arrive with Milestones 6, 7 and 9.
+`anchor skip`, `anchor category`, `anchor schedule`, `anchor stats`,
+`anchor config` and `anchor doctor` are specified in SPEC 15 and arrive with
+Milestones 6, 7 and 9.
 
 ## Exit codes
 

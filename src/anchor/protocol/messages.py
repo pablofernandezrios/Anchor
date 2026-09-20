@@ -26,7 +26,7 @@ from typing import Any, Final, Self
 
 from anchor.protocol.errors import ErrorCode, ProtocolError
 from anchor.protocol.schema import EMPTY, Field, Schema
-from anchor.protocol.types import Level, SessionOrigin, Valve
+from anchor.protocol.types import Level, SessionOrigin, Valve, WebMode
 
 PROTOCOL_VERSION: Final = 1
 
@@ -40,6 +40,7 @@ MAX_MANUAL_DURATION_SECONDS: Final = 8 * 60 * 60
 _LEVELS: Final = tuple(str(level) for level in Level)
 _VALVES: Final = tuple(str(valve) for valve in Valve)
 _ORIGINS: Final = tuple(str(origin) for origin in SessionOrigin)
+_WEB_MODES: Final = tuple(str(mode) for mode in WebMode)
 
 
 REQUEST_SCHEMAS: Final[dict[str, Schema]] = {
@@ -64,6 +65,30 @@ REQUEST_SCHEMAS: Final[dict[str, Schema]] = {
     "valve.withdraw": EMPTY,
     "valve.phrase": Schema(text=Field(str)),
     "schedule.skip": EMPTY,
+    "profile.list": EMPTY,
+    "profile.show": Schema(name=Field(str)),
+    "profile.create": Schema(
+        name=Field(str),
+        web_mode=Field(str, required=False, default=None, choices=_WEB_MODES),
+        domains=Field(list, required=False, default=None, item_kind=str),
+        apps=Field(list, required=False, default=None, item_kind=str),
+        categories=Field(list, required=False, default=None, item_kind=str),
+    ),
+    # Edits name what to add and what to take away rather than replacing the
+    # whole profile. That is how a person thinks about a list, and it is what
+    # the ratchet judges: adding is always allowed, taking away is not.
+    "profile.edit": Schema(
+        name=Field(str),
+        web_mode=Field(str, required=False, default=None, choices=_WEB_MODES),
+        add_domains=Field(list, required=False, default=None, item_kind=str),
+        remove_domains=Field(list, required=False, default=None, item_kind=str),
+        add_apps=Field(list, required=False, default=None, item_kind=str),
+        remove_apps=Field(list, required=False, default=None, item_kind=str),
+        add_categories=Field(list, required=False, default=None, item_kind=str),
+        remove_categories=Field(list, required=False, default=None, item_kind=str),
+        block_vpn_and_tor=Field(bool, required=False, default=None),
+    ),
+    "profile.delete": Schema(name=Field(str)),
     # Spoken by anchor-blockerd rather than by a person.
     "policy.get": EMPTY,
     "blocked.report": Schema(domain=Field(str), rule=Field(str)),
@@ -93,6 +118,7 @@ EVENT_TYPES: Final = frozenset(
         "rupture.recorded",
         "blocked.attempt",
         "config.changed",
+        "profile.changed",
     }
 )
 

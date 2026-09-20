@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from anchor.engine.paths import Paths, Settings
 from anchor.engine.profiles import Profile
+from anchor.engine.ratchet import check_profile_change
 from anchor.engine.refusal import apply_refusal, remove_refusal
 from anchor.engine.sessions import (
     ExitKind,
@@ -33,7 +35,7 @@ from anchor.engine.sessions import (
 from anchor.engine.state import EngineState
 from anchor.engine.store import LoadStatus, SignedStore, load_or_create_key
 from anchor.engine.timekeeping import Clock, SystemClock, reconcile
-from anchor.protocol.errors import AnchorError, ErrorCode
+from anchor.protocol.errors import AnchorError, ErrorCode, RatchetViolationError
 from anchor.protocol.messages import Event, Request, Response
 from anchor.protocol.types import Level, RuptureKind, SessionOrigin, Valve, WebMode
 
@@ -208,9 +210,120 @@ class Engine:
             "valve.request": self._on_valve_request,
             "valve.withdraw": self._on_withdraw,
             "valve.phrase": self._on_valve_phrase,
+            "profile.list": self._on_profile_list,
+            "profile.show": self._on_profile_show,
+            "profile.create": self._on_profile_create,
+            "profile.edit": self._on_profile_edit,
+            "profile.delete": self._on_profile_delete,
             "policy.get": self._on_policy,
             "blocked.report": self._on_blocked_report,
         }
+
+    # -- profiles ---------------------------------------------------------
+
+    def _require_profile(self, name: str) -> Profile:
+        profile = self.profiles.get(name)
+        if profile is None:
+            raise AnchorError(
+                f"there is no profile called {name!r}", code=ErrorCode.UNKNOWN_PROFILE
+            )
+        return profile
+
+    def _profile_in_use(self, name: str) -> bool:
+        """Whether a running session is enforcing this profile.
+
+        The ratchet protects the session that is running, not the whole
+        configuration file. A profile nothing is using can be edited freely,
+        because there is no way to switch a session onto it mid-flight.
+        """
+        self.tick()
+        return self.state.session is not None and self.state.session.profile == name
+
+    def _on_profile_list(self, request: Request) -> Response:
+        return request.ok({"profiles": sorted(self.profiles)})
+
+    def _on_profile_show(self, request: Request) -> Response:
+        profile = self._require_profile(str(request.payload["name"]))
+        return request.ok({"profile": profile.to_dict()})
+
+    def _on_profile_create(self, request: Request) -> Response:
+        name = str(request.payload["name"])
+        if name in self.profiles:
+            raise AnchorError(
+                f"a profile called {name!r} already exists", code=ErrorCode.INVALID_CONFIG
+            )
+
+        payload = request.payload
+        try:
+            profile = Profile(
+                name=name,
+                web_mode=WebMode(payload["web_mode"])
+                if payload.get("web_mode")
+                else WebMode.BLOCKLIST,
+                domains=frozenset(payload.get("domains") or ()),
+                apps=frozenset(payload.get("apps") or ()),
+                categories=frozenset(payload.get("categories") or ()),
+            )
+        except ValueError as error:
+            raise AnchorError(str(error), code=ErrorCode.INVALID_CONFIG) from error
+
+        self.profiles[name] = profile
+        self.save_config()
+        self.emit("profile.changed", {"name": name})
+        return request.ok({"profile": profile.to_dict()})
+
+    def _on_profile_edit(self, request: Request) -> Response:
+        payload = request.payload
+        name = str(payload["name"])
+        current = self._require_profile(name)
+
+        def changed(base: frozenset[str], added: str, removed: str) -> frozenset[str]:
+            """Apply one field's additions and removals.
+
+            The result is what the ratchet judges: the caller says what to add
+            and what to take away, and taking away is what a session refuses.
+            """
+            plus: list[str] = list(payload.get(added) or ())
+            minus: list[str] = list(payload.get(removed) or ())
+            return (base | frozenset(plus)) - frozenset(minus)
+
+        proposed = replace(
+            current,
+            web_mode=(
+                WebMode(payload["web_mode"]) if payload.get("web_mode") else current.web_mode
+            ),
+            domains=changed(current.domains, "add_domains", "remove_domains"),
+            apps=changed(current.apps, "add_apps", "remove_apps"),
+            categories=changed(current.categories, "add_categories", "remove_categories"),
+            block_vpn_and_tor=(
+                current.block_vpn_and_tor
+                if payload.get("block_vpn_and_tor") is None
+                else bool(payload["block_vpn_and_tor"])
+            ),
+        )
+
+        # Checked before anything is written, so a refused edit leaves the
+        # profile exactly as it was rather than half applied.
+        if self._profile_in_use(name):
+            check_profile_change(current, proposed)
+
+        self.profiles[name] = proposed
+        self.save_config()
+        self.emit("profile.changed", {"name": name})
+        log.info("profile %s edited", name)
+        return request.ok({"profile": proposed.to_dict()})
+
+    def _on_profile_delete(self, request: Request) -> Response:
+        name = str(request.payload["name"])
+        self._require_profile(name)
+
+        if self._profile_in_use(name):
+            raise RatchetViolationError(f"cannot delete {name!r} while a session is enforcing it")
+
+        del self.profiles[name]
+        self.save_config()
+        self.emit("profile.changed", {"name": name})
+        return request.ok({"deleted": name})
 
     def _on_policy(self, request: Request) -> Response:
         """Tell the blocker what to block (SPEC 5.1).

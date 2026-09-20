@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import signal
 import sys
 from collections.abc import Sequence
 from datetime import datetime
@@ -87,6 +89,44 @@ def build_parser() -> argparse.ArgumentParser:
     cancel.add_argument("--phrase", help="The phrase Anchor generated. Firm sessions ask for one.")
     cancel.add_argument("--withdraw", action="store_true", help="Change your mind about leaving.")
 
+    profile = commands.add_parser("profile", help="The named sets of rules sessions use.")
+    profile_actions = profile.add_subparsers(dest="action", required=True)
+    profile_actions.add_parser("list", help="List the profiles you have.")
+
+    show = profile_actions.add_parser("show", help="Show what a profile blocks.")
+    show.add_argument("name")
+
+    create = profile_actions.add_parser("create", help="Make a new profile.")
+    create.add_argument("name")
+    create.add_argument(
+        "--mode",
+        choices=("blocklist", "allowlist"),
+        help="Block what is listed, or block everything else.",
+    )
+    create.add_argument("--domain", action="append", default=[], help="May be repeated.")
+    create.add_argument("--app", action="append", default=[], help="May be repeated.")
+
+    edit = profile_actions.add_parser(
+        "edit",
+        help="Change a profile. During a session only stricter changes are accepted.",
+    )
+    edit.add_argument("name")
+    edit.add_argument("--mode", choices=("blocklist", "allowlist"))
+    edit.add_argument("--add-domain", action="append", default=[], help="May be repeated.")
+    edit.add_argument("--remove-domain", action="append", default=[], help="May be repeated.")
+    edit.add_argument("--add-app", action="append", default=[], help="May be repeated.")
+    edit.add_argument("--remove-app", action="append", default=[], help="May be repeated.")
+    edit.add_argument(
+        "--block-vpn",
+        dest="block_vpn",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Block VPN and Tor in Strict sessions. Only changeable before one starts.",
+    )
+
+    delete = profile_actions.add_parser("delete", help="Remove a profile.")
+    delete.add_argument("name")
+
     valve = commands.add_parser("valve", help="The emergency exit from a Strict session.")
     valve_actions = valve.add_subparsers(dest="action", required=True)
     valve_actions.add_parser("request", help="Ask to be let out.")
@@ -98,6 +138,23 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    try:
+        return _run(argv)
+    except BrokenPipeError:
+        # `anchor status | head` closes the pipe while we are still writing.
+        # Python would otherwise print a traceback at exit, when flushing
+        # stdout fails again. Pointing stdout at /dev/null first lets the
+        # interpreter shut down quietly, which is what every other command
+        # line tool does.
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        return 128 + signal.SIGPIPE
+    except KeyboardInterrupt:
+        print(file=sys.stderr)
+        return 128 + signal.SIGINT
+
+
+def _run(argv: Sequence[str] | None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -154,6 +211,9 @@ def _request_for(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
                 return "session.withdraw_cancel", {}
             return "session.cancel", ({"typed": args.phrase} if args.phrase else {})
 
+        case "profile":
+            return _profile_request(args)
+
         case "valve":
             match args.action:
                 case "request":
@@ -165,6 +225,44 @@ def _request_for(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
                     return "valve.phrase", {"text": text}
 
     raise ValueError(f"unknown command {args.command!r}")
+
+
+def _profile_request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
+    match args.action:
+        case "list":
+            return "profile.list", {}
+        case "show":
+            return "profile.show", {"name": args.name}
+        case "delete":
+            return "profile.delete", {"name": args.name}
+        case "create":
+            payload: dict[str, Any] = {"name": args.name}
+            if args.mode:
+                payload["web_mode"] = args.mode
+            if args.domain:
+                payload["domains"] = args.domain
+            if args.app:
+                payload["apps"] = args.app
+            return "profile.create", payload
+        case "edit":
+            changes: dict[str, Any] = {"name": args.name}
+            for option, field in (
+                ("mode", "web_mode"),
+                ("add_domain", "add_domains"),
+                ("remove_domain", "remove_domains"),
+                ("add_app", "add_apps"),
+                ("remove_app", "remove_apps"),
+            ):
+                value = getattr(args, option)
+                if value:
+                    changes[field] = value
+            if args.block_vpn is not None:
+                changes["block_vpn_and_tor"] = args.block_vpn
+            if len(changes) == 1:
+                raise ValueError("nothing to change; pass at least one option")
+            return "profile.edit", changes
+
+    raise ValueError(f"unknown profile action {args.action!r}")
 
 
 def _prompt_for_phrase() -> str:
@@ -188,7 +286,38 @@ def _render(args: argparse.Namespace, result: dict[str, Any]) -> None:
     if args.command == "valve" and result.get("ended"):
         print("Session ended through the emergency valve. This was recorded.")
         return
+    if args.command == "profile":
+        _render_profile(args, result)
+        return
     _render_status(result)
+
+
+def _render_profile(args: argparse.Namespace, result: dict[str, Any]) -> None:
+    if args.action == "list":
+        profiles = result.get("profiles") or []
+        print("\n".join(profiles) if profiles else "No profiles yet.")
+        return
+
+    if args.action == "delete":
+        print(f"Deleted {result.get('deleted')}.")
+        return
+
+    profile = result.get("profile") or {}
+    print(f"{profile.get('name')} · {profile.get('web_mode')}")
+
+    for label, key in (("Categories", "categories"), ("Domains", "domains"), ("Apps", "apps")):
+        values = profile.get(key) or []
+        if values:
+            print(f"  {label}: {', '.join(values)}")
+
+    breaks = profile.get("breaks") or {}
+    if breaks:
+        print(
+            f"  Breaks: {breaks.get('work_minutes')}/{breaks.get('break_minutes')} · "
+            f"{breaks.get('type')} · {breaks.get('hardness')}"
+        )
+    if not profile.get("block_vpn_and_tor", True):
+        print("  VPN and Tor: allowed even in Strict sessions")
 
 
 def _render_status(result: dict[str, Any]) -> None:
