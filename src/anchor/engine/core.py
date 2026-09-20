@@ -33,7 +33,7 @@ from anchor.engine.store import LoadStatus, SignedStore, load_or_create_key
 from anchor.engine.timekeeping import Clock, SystemClock, reconcile
 from anchor.protocol.errors import AnchorError, ErrorCode
 from anchor.protocol.messages import Event, Request, Response
-from anchor.protocol.types import Level, RuptureKind, SessionOrigin, Valve
+from anchor.protocol.types import Level, RuptureKind, SessionOrigin, Valve, WebMode
 
 log = logging.getLogger("anchord")
 
@@ -182,7 +182,62 @@ class Engine:
             "valve.request": self._on_valve_request,
             "valve.withdraw": self._on_withdraw,
             "valve.phrase": self._on_valve_phrase,
+            "policy.get": self._on_policy,
+            "blocked.report": self._on_blocked_report,
         }
+
+    def _on_policy(self, request: Request) -> Response:
+        """Tell the blocker what to block (SPEC 5.1).
+
+        Only the user's own rules. The essentials list and the DoH endpoints
+        are the blocker's business: they are how blocking is made to work
+        rather than choices the user made, and the engine has no opinion on
+        them.
+        """
+        self.tick()
+        session = self.state.session
+        if session is None:
+            return request.ok({"active": False})
+
+        profile = self.profiles.get(session.profile)
+        if profile is None:
+            # A session naming a profile that no longer exists still blocks.
+            # Dropping to "nothing blocked" would turn a missing profile into
+            # a way out (P4).
+            log.warning(
+                "session %s names profile %r, which is not in the configuration; "
+                "blocking everything until it is restored",
+                session.id,
+                session.profile,
+            )
+            return request.ok({"active": True, "mode": str(WebMode.ALLOWLIST), "domains": []})
+
+        return request.ok(
+            {
+                "active": True,
+                "mode": str(profile.web_mode),
+                "domains": sorted(profile.domains),
+            }
+        )
+
+    def _on_blocked_report(self, request: Request) -> Response:
+        """Record an attempt the blocker refused (SPEC 8.3, 13)."""
+        session = self.state.session
+        if session is None:
+            # The session ended between the block and the report. Nothing to
+            # attribute it to, and not worth an error.
+            return request.ok({"recorded": False})
+
+        self.state.session = session.with_blocked_attempt()
+        self.save()
+
+        domain = str(request.payload["domain"])
+        rule = str(request.payload["rule"])
+        # This event carries a domain, and goes only to subscribers in the
+        # user's own session so the agent can show a notification. It is never
+        # written to the log (SPEC 13).
+        self.emit("blocked.attempt", {"domain": domain, "rule": rule})
+        return request.ok({"recorded": True, "total": self.state.session.blocked_attempts})
 
     def _on_status(self, request: Request) -> Response:
         self.tick()

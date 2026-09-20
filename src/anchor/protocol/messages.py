@@ -64,6 +64,9 @@ REQUEST_SCHEMAS: Final[dict[str, Schema]] = {
     "valve.withdraw": EMPTY,
     "valve.phrase": Schema(text=Field(str)),
     "schedule.skip": EMPTY,
+    # Spoken by anchor-blockerd rather than by a person.
+    "policy.get": EMPTY,
+    "blocked.report": Schema(domain=Field(str), rule=Field(str)),
     "stats.query": Schema(
         range=Field(str, choices=("day", "week", "month"), required=False, default="week"),
     ),

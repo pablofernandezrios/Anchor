@@ -29,6 +29,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Final
 
 from anchor.blocker.commands import Runner, run
 from anchor.blocker.constants import (
@@ -173,3 +174,60 @@ def follow_network_changes(
         len(current.upstreams),
     )
     return apply(journal, runner=runner, resolver_port=resolver_port, drop_in=drop_in)
+
+
+#: Where a machine without systemd-resolved says its DNS servers are.
+RESOLV_CONF: Final = Path("/etc/resolv.conf")
+
+#: systemd-resolved's own stub. Forwarding to it while resolved is not running
+#: sends queries nowhere; forwarding to it while resolved *is* running sends
+#: them back through the redirect and into Anchor again.
+_STUB_ADDRESSES: Final = frozenset({"127.0.0.53", "127.0.0.54"})
+
+
+def read_resolv_conf(path: Path | None = None, *, resolver_port: int = RESOLVER_PORT) -> list[str]:
+    """Read upstream servers from ``resolv.conf`` (SPEC 8.2).
+
+    This is the path for distributions without systemd-resolved, and it is not
+    a nicety. Without it the resolver has nowhere to forward, answers SERVFAIL
+    to everything, and a session blocks the entire internet rather than the
+    sites it was asked to block.
+    """
+    del resolver_port  # Anchor never appears in resolv.conf; it uses a port.
+
+    # Resolved at call time rather than bound as a default, so the path is
+    # one thing a test can move.
+    path = path if path is not None else RESOLV_CONF
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as error:
+        log.warning("could not read %s: %s", path, error)
+        return []
+
+    servers: list[str] = []
+    for line in text.splitlines():
+        entry = line.split("#", 1)[0].split(";", 1)[0].strip()
+        if not entry.lower().startswith("nameserver"):
+            continue
+        parts = entry.split()
+        if len(parts) < 2:
+            continue
+        address = parts[1]
+        # Skip anything that would send the query straight back to Anchor.
+        if address in _STUB_ADDRESSES or address.startswith("127.") or address == "::1":
+            continue
+        if address not in servers:
+            servers.append(address)
+
+    return servers
+
+
+def discover_upstreams(*, runner: Runner = run, resolver_port: int = RESOLVER_PORT) -> list[str]:
+    """Find somewhere to forward to, however this machine is configured."""
+    if is_available(runner=runner):
+        upstreams = read_state(runner=runner, resolver_port=resolver_port).upstreams
+        if upstreams:
+            return upstreams
+
+    return read_resolv_conf(resolver_port=resolver_port)
