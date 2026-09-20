@@ -17,6 +17,9 @@ DEFAULT_ETC: Final = Path("/etc/anchor")
 DEFAULT_STATE_DIR: Final = Path("/var/lib/anchor")
 DEFAULT_RUNTIME_DIR: Final = Path("/run/anchor")
 
+#: Where the lists Anchor ships are installed (SPEC 12).
+DEFAULT_DATA_DIR: Final = Path("/usr/share/anchor")
+
 #: Where systemd reads runtime unit drop-ins, including the one that
 #: refuses a manual stop during a session (SPEC 5.3).
 DEFAULT_SYSTEMD_RUNTIME_DIR: Final = Path("/run/systemd/system")
@@ -36,6 +39,7 @@ class Paths:
     state_dir: Path = DEFAULT_STATE_DIR
     runtime_dir: Path = DEFAULT_RUNTIME_DIR
     systemd_runtime_dir: Path = DEFAULT_SYSTEMD_RUNTIME_DIR
+    data_dir: Path = DEFAULT_DATA_DIR
 
     @classmethod
     def resolve(cls, root: str | os.PathLike[str] | None = None) -> Self:
@@ -57,6 +61,7 @@ class Paths:
             state_dir=base / "var" / "lib" / "anchor",
             runtime_dir=base / "run" / "anchor",
             systemd_runtime_dir=base / "run" / "systemd" / "system",
+            data_dir=base / "usr" / "share" / "anchor",
         )
 
     @property
@@ -82,6 +87,20 @@ class Paths:
     def key_file(self) -> Path:
         """The HMAC key. Mode 0600, root only."""
         return self.state_dir / ".key"
+
+    @property
+    def shipped_categories(self) -> Path:
+        """The categories the package installs, replaced on every update."""
+        return self.data_dir / "categories"
+
+    @property
+    def user_categories(self) -> Path:
+        """The user's own categories, which replace shipped ones by name.
+
+        SPEC 12 asks for lists that are both editable and updated with the
+        package, which only works if the two live apart.
+        """
+        return self.etc_dir / "categories"
 
     @property
     def engine_socket(self) -> Path:

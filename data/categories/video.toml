@@ -1,0 +1,31 @@
+# Anchor category: video (SPEC 12).
+#
+# Shipped with the package and replaced on update. Copy to
+# /etc/anchor/categories/video.toml to make it yours.
+
+name = "Video"
+
+domains = [
+  "youtube.com",
+  "youtu.be",
+  "ytimg.com",
+  "googlevideo.com",
+  "netflix.com",
+  "primevideo.com",
+  "disneyplus.com",
+  "hbomax.com",
+  "max.com",
+  "hulu.com",
+  "twitch.tv",
+  "vimeo.com",
+  "dailymotion.com",
+  "crunchyroll.com",
+  "tiktok.com",
+  "rumble.com",
+]
+
+apps = [
+  "com.github.iwalton3.jellyfin-media-player.desktop",
+  "tv.plex.desktop.desktop",
+  "com.stremio.Stremio.desktop",
+]

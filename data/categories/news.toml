@@ -1,0 +1,29 @@
+# Anchor category: news (SPEC 12).
+#
+# Shipped with the package and replaced on update. Copy to
+# /etc/anchor/categories/news.toml to make it yours. The news you read is
+# local to you, so this list is a starting point rather than an answer.
+
+name = "News"
+
+domains = [
+  "news.google.com",
+  "bbc.com",
+  "bbc.co.uk",
+  "cnn.com",
+  "nytimes.com",
+  "theguardian.com",
+  "washingtonpost.com",
+  "reuters.com",
+  "apnews.com",
+  "elpais.com",
+  "elmundo.es",
+  "abc.es",
+  "lavanguardia.com",
+  "marca.com",
+  "as.com",
+  "hackernews.com",
+  "news.ycombinator.com",
+]
+
+apps = []

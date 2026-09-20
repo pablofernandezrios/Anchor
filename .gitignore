@@ -31,6 +31,9 @@ MANIFEST
 #   before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+# ...but an RPM spec is source, not a build artefact. Without this the whole
+# RPM packaging is invisible to git, and nobody reviews a file nobody sees.
+!packaging/rpm/*.spec
 
 # Installer logs
 pip-log.txt

@@ -38,7 +38,7 @@ a change can be refused.
 src/anchor/
   protocol/    types, error codes, schema validation, message envelopes
   engine/      paths, store, timekeeping, sessions, ratchet, profiles,
-               phrases, state, core, service, main
+               categories, phrases, state, core, service, main
   blocker/     journal, restore, constants, commands, dnswire, matcher,
                recent, attempts, resolver, rules, resolved, policies,
                apps, processes, watcher, enforcement, daemon, main
@@ -236,6 +236,33 @@ the netlink messages are packed and unpacked by hand.
 A handler that raises is logged and the watch continues: missing every later
 launch would be a far worse failure than missing this one.
 
+### Categories
+
+A category is the useful unit for a person: one tick that stands for a list of
+domains and the applications that go with them. SPEC 9's example is Discord,
+where blocking the program without `discord.com` blocks very little, because
+the site is the same thing in a browser.
+
+The five SPEC 12 names ship as TOML files in `/usr/share/anchor/categories`,
+which the package replaces on every update. A file of the same name in
+`/etc/anchor/categories` replaces the shipped one entirely, and a new name adds
+a category of the user's own. That is how the specification's two requirements
+— lists that stay current *and* lists the user can edit — both hold: they live
+apart. Replacing rather than merging is deliberate, since a merge would leave
+no way to take a domain out of a shipped list.
+
+A category file that cannot be read is skipped with a warning, and a profile
+naming a category that is not installed keeps its other rules. Refusing to
+start a session over a stray character in a list would be a worse answer than
+blocking less for one session.
+
+The engine resolves categories, not the blocker: it is the engine that decides
+what a session blocks, and the blocker receives domains and applications
+already merged. In an allowlist profile the category's domains are left out,
+because adding things-to-block to the list of what is allowed would invert
+their meaning; its applications still apply, since SPEC 9 has no allowlist for
+those.
+
 ### The two minutes, and after them
 
 `enforcement.py` does the closing, and the two moments are deliberately not the
@@ -298,6 +325,6 @@ mean blocking the web.
 
 ## Not built yet
 
-Categories that bundle an application with its domains, breaks, schedules,
-statistics, the interface and the packages. The milestones in the build plan cover them, and
+Breaks, schedules, statistics, the agent and indicator, the interface, and
+the packages. The milestones in the build plan cover them, and
 `docs/spikes/` records what was learned before building each one.

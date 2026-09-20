@@ -1,0 +1,27 @@
+# Anchor category: shopping (SPEC 12).
+#
+# Shipped with the package and replaced on update. Copy to
+# /etc/anchor/categories/shopping.toml to make it yours.
+
+name = "Shopping"
+
+domains = [
+  "amazon.com",
+  "amazon.es",
+  "amazon.co.uk",
+  "amazon.de",
+  "ebay.com",
+  "ebay.es",
+  "aliexpress.com",
+  "alibaba.com",
+  "temu.com",
+  "shein.com",
+  "wallapop.com",
+  "etsy.com",
+  "zara.com",
+  "elcorteingles.es",
+  "pccomponentes.com",
+  "mediamarkt.es",
+]
+
+apps = []

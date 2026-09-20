@@ -1,0 +1,33 @@
+# Anchor category: games (SPEC 12).
+#
+# Shipped with the package and replaced on update. Copy to
+# /etc/anchor/categories/games.toml to make it yours.
+
+name = "Games"
+
+domains = [
+  "steampowered.com",
+  "steamcommunity.com",
+  "epicgames.com",
+  "gog.com",
+  "origin.com",
+  "ea.com",
+  "ubisoft.com",
+  "battle.net",
+  "blizzard.com",
+  "roblox.com",
+  "minecraft.net",
+  "itch.io",
+  "chess.com",
+  "lichess.org",
+]
+
+apps = [
+  "steam.desktop",
+  "com.valvesoftware.Steam.desktop",
+  "net.lutris.Lutris.desktop",
+  "lutris.desktop",
+  "com.heroicgameslauncher.hgl.desktop",
+  "org.gnome.Mines.desktop",
+  "minecraft-launcher.desktop",
+]

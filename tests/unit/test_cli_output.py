@@ -48,3 +48,67 @@ class TestFormatting:
         self, seconds: int, expected: str
     ) -> None:
         assert format_duration(seconds) == expected
+
+
+class TestRenderingCategories:
+    """`anchor category list|show` (SPEC 15)."""
+
+    def render(self, action: str, name: str | None, result: dict[str, object]) -> tuple[int, str]:
+        import argparse
+        import contextlib
+        import io
+
+        from anchor.cli.main import _render
+
+        args = argparse.Namespace(command="category", action=action, name=name)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = _render(args, result)
+        return code, out.getvalue()
+
+    @property
+    def listing(self) -> dict[str, object]:
+        return {
+            "categories": [
+                {
+                    "id": "social",
+                    "name": "Social media",
+                    "domains": ["discord.com", "facebook.com"],
+                    "apps": ["discord.desktop"],
+                },
+                {"id": "news", "name": "News", "domains": ["bbc.com"], "apps": []},
+            ]
+        }
+
+    def test_the_list_shows_what_each_one_covers(self) -> None:
+        code, text = self.render("list", None, self.listing)
+
+        assert code == 0
+        assert "social" in text
+        assert "Social media" in text
+        assert "2 domains, 1 apps" in text
+
+    def test_an_empty_list_says_so_rather_than_printing_nothing(self) -> None:
+        code, text = self.render("list", None, {"categories": []})
+
+        assert code == 0
+        assert "No categories" in text
+
+    def test_showing_one_prints_its_domains_and_apps(self) -> None:
+        code, text = self.render("show", "social", self.listing)
+
+        assert code == 0
+        assert "discord.com, facebook.com" in text
+        assert "discord.desktop" in text
+
+    def test_a_category_with_no_apps_prints_a_dash(self) -> None:
+        _code, text = self.render("show", "news", self.listing)
+
+        assert "Apps: -" in text
+
+    def test_an_unknown_name_is_an_error_not_a_silence(self) -> None:
+        """A script that pipes this needs to hear about it in the exit code."""
+        code, text = self.render("show", "nope", self.listing)
+
+        assert code == 1
+        assert text == ""

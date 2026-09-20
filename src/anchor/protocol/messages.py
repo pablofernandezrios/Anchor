@@ -91,6 +91,7 @@ REQUEST_SCHEMAS: Final[dict[str, Schema]] = {
     "profile.delete": Schema(name=Field(str)),
     # Spoken by anchor-blockerd rather than by a person.
     "policy.get": EMPTY,
+    "category.list": EMPTY,
     "blocked.report": Schema(domain=Field(str), rule=Field(str)),
     "apps.report": Schema(
         kind=Field(str, choices=("grace", "closed", "launch")),

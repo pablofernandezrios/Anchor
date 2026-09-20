@@ -127,6 +127,14 @@ def build_parser() -> argparse.ArgumentParser:
     delete = profile_actions.add_parser("delete", help="Remove a profile.")
     delete.add_argument("name")
 
+    category = commands.add_parser(
+        "category", help="The shipped bundles of domains and applications."
+    )
+    category_actions = category.add_subparsers(dest="action", required=True)
+    category_actions.add_parser("list", help="List the categories installed here.")
+    category_show = category_actions.add_parser("show", help="Show what a category covers.")
+    category_show.add_argument("name", help="The category's identifier, as `list` prints it.")
+
     valve = commands.add_parser("valve", help="The emergency exit from a Strict session.")
     valve_actions = valve.add_subparsers(dest="action", required=True)
     valve_actions.add_parser("request", help="Ask to be let out.")
@@ -180,8 +188,7 @@ def _run(argv: Sequence[str] | None) -> int:
         print(f"anchor: {response.error.get('message', 'the engine refused')}", file=sys.stderr)
         return _exit_code(response)
 
-    _render(args, response.result)
-    return EXIT_OK
+    return _render(args, response.result)
 
 
 def _request_for(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
@@ -213,6 +220,11 @@ def _request_for(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
 
         case "profile":
             return _profile_request(args)
+
+        case "category":
+            # One request for both actions: the list is small, and asking the
+            # engine to filter it would be a request that adds nothing.
+            return "category.list", {}
 
         case "valve":
             match args.action:
@@ -279,17 +291,48 @@ def _exit_code(response: Response) -> int:
     return _EXIT_FOR_CODE.get(response.code or "", EXIT_ERROR)
 
 
-def _render(args: argparse.Namespace, result: dict[str, Any]) -> None:
+def _render(args: argparse.Namespace, result: dict[str, Any]) -> int:
+    """Print the answer, and say how the command ended (SPEC 15)."""
     if args.command == "cancel" and result.get("ended"):
         print("Session ended.")
-        return
+        return EXIT_OK
     if args.command == "valve" and result.get("ended"):
         print("Session ended through the emergency valve. This was recorded.")
-        return
+        return EXIT_OK
     if args.command == "profile":
         _render_profile(args, result)
-        return
+        return EXIT_OK
+    if args.command == "category":
+        return _render_category(args, result)
     _render_status(result)
+    return EXIT_OK
+
+
+def _render_category(args: argparse.Namespace, result: dict[str, Any]) -> int:
+    categories = result.get("categories") or []
+    if args.action == "list":
+        if not categories:
+            print("No categories are installed.")
+            return EXIT_OK
+        for category in categories:
+            print(
+                f"{category['id']:<12} {category['name']} "
+                f"({len(category['domains'])} domains, {len(category['apps'])} apps)"
+            )
+        return EXIT_OK
+
+    for category in categories:
+        if category["id"] == args.name:
+            print(f"{category['name']} ({category['id']})")
+            for label, key in (("Domains", "domains"), ("Apps", "apps")):
+                values = category.get(key) or []
+                print(f"  {label}: {', '.join(values) if values else '-'}")
+            return EXIT_OK
+
+    # A name nothing answers to is the user's mistake, and a script that pipes
+    # this needs to hear about it in the exit code as well as on stderr.
+    print(f"anchor: no category called {args.name!r} is installed", file=sys.stderr)
+    return EXIT_ERROR
 
 
 def _render_profile(args: argparse.Namespace, result: dict[str, Any]) -> None:

@@ -21,6 +21,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from anchor.engine.categories import Category, load_categories, resolve
 from anchor.engine.paths import Paths, Settings
 from anchor.engine.profiles import Profile
 from anchor.engine.ratchet import check_profile_change
@@ -66,6 +67,7 @@ class Engine:
         self.policy = policy or SessionPolicy()
         self.state = EngineState()
         self.profiles: dict[str, Profile] = {}
+        self.categories: dict[str, Category] = {}
         self._sinks: list[EventSink] = []
 
         key = load_or_create_key(paths.key_file)
@@ -95,6 +97,8 @@ class Engine:
     def load(self) -> None:
         """Read configuration and state from disk, then reconcile the clock."""
         self.paths.ensure_directories()
+
+        self.categories = load_categories(self.paths.shipped_categories, self.paths.user_categories)
 
         config = self._config_store.load()
         if config.status is LoadStatus.TAMPERED:
@@ -217,6 +221,7 @@ class Engine:
             "profile.edit": self._on_profile_edit,
             "profile.delete": self._on_profile_delete,
             "policy.get": self._on_policy,
+            "category.list": self._on_category_list,
             "blocked.report": self._on_blocked_report,
             "apps.report": self._on_apps_report,
             "tamper.report": self._on_tamper_report,
@@ -368,12 +373,22 @@ class Engine:
                 }
             )
 
+        bundled = resolve(profile.categories, self.categories)
         return request.ok(
             {
                 "active": True,
                 "mode": str(profile.web_mode),
-                "domains": sorted(profile.domains),
-                "apps": sorted(profile.apps),
+                # A category's domains are things to block, so in allowlist
+                # mode they are left out: adding them to the list of what is
+                # allowed would turn "block social media" into "social media
+                # is the only thing you may read". Its applications still
+                # apply, because there is no allowlist for those (SPEC 9).
+                "domains": sorted(
+                    profile.domains | bundled.domains
+                    if profile.web_mode is WebMode.BLOCKLIST
+                    else profile.domains
+                ),
+                "apps": sorted(profile.apps | bundled.apps),
                 # How long the applications already open still have to save
                 # their work (SPEC 7.1). The engine works it out rather than
                 # the blocker, so that restarting the blocker cannot hand out
@@ -384,6 +399,16 @@ class Engine:
                 # blocking them even in Strict.
                 "block_tunnels": session.level is Level.STRICT and profile.block_vpn_and_tor,
             }
+        )
+
+    def _on_category_list(self, request: Request) -> Response:
+        """The categories this machine knows (SPEC 12).
+
+        The interface needs their names to show tick boxes, and a profile
+        stores only their identifiers.
+        """
+        return request.ok(
+            {"categories": [category.to_dict() for category in _by_name(self.categories)]}
         )
 
     def _on_blocked_report(self, request: Request) -> Response:
@@ -635,3 +660,7 @@ def _as_kwargs(session: Session) -> dict[str, Any]:
         "blocked_attempts": session.blocked_attempts,
         "ruptures": session.ruptures,
     }
+
+
+def _by_name(categories: dict[str, Category]) -> list[Category]:
+    return sorted(categories.values(), key=lambda category: (category.name.lower(), category.id))

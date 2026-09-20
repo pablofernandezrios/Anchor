@@ -140,9 +140,43 @@ A profile a session is enforcing cannot be deleted either. A profile nothing is
 using can be edited and deleted freely, because there is no way to move a
 running session onto it.
 
+### `anchor category list|show`
+
+The shipped bundles of domains and applications a profile can tick (SPEC 12).
+A category blocks both at once: "Social media" covers `discord.com` *and*
+Discord itself, which is SPEC 9's own example.
+
+```
+$ anchor category list
+games        Games (14 domains, 7 apps)
+news         News (17 domains, 0 apps)
+shopping     Shopping (16 domains, 0 apps)
+social       Social media (17 domains, 6 apps)
+video        Video (16 domains, 3 apps)
+
+$ anchor category show social
+Social media (social)
+  Domains: bsky.app, discord.com, discordapp.com, ...
+  Apps: com.discordapp.Discord.desktop, discord.desktop, ...
+```
+
+The first column is the identifier, which is what a profile stores and what
+`show` takes. A name nothing answers to exits 1.
+
+The five shipped categories live in `/usr/share/anchor/categories` and are
+replaced whenever the package is updated. To change one, copy it to
+`/etc/anchor/categories/` and edit that: a file of the same name there replaces
+the shipped one entirely, and a file with a new name adds a category of your
+own. `anchor category edit` is not built yet; the files are plain TOML and are
+meant to be edited.
+
+In an allowlist profile a category still blocks its applications, but its
+domains are ignored: adding them to the list of what is allowed would turn
+"block social media" into "social media is the only thing you may read".
+
 ### Planned
 
-`anchor skip`, `anchor category`, `anchor schedule`, `anchor stats`,
+`anchor skip`, `anchor category edit`, `anchor schedule`, `anchor stats`,
 `anchor config` and `anchor doctor` are specified in SPEC 15 and arrive with
 Milestones 6, 7 and 9.
 

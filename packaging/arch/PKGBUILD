@@ -45,6 +45,10 @@ package() {
   install -Dm644 data/doh-endpoints.txt "$pkgdir/usr/share/anchor/doh-endpoints.txt"
   install -Dm644 data/doh-domains.txt "$pkgdir/usr/share/anchor/doh-domains.txt"
   install -Dm644 data/tunnels.txt "$pkgdir/usr/share/anchor/tunnels.txt"
+  install -Dm644 data/categories/*.toml -t "$pkgdir/usr/share/anchor/categories/"
+
+  # Where the user's own categories go, replacing shipped ones by name (SPEC 12).
+  install -dm755 "$pkgdir/etc/anchor/categories"
 
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"

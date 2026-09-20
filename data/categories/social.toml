@@ -1,0 +1,43 @@
+# Anchor category: social media (SPEC 12).
+#
+# This file ships with the package and is replaced when the package is
+# updated, so edits here are lost. To change it, copy it to
+# /etc/anchor/categories/social.toml and edit that: a file of the same name
+# there replaces this one entirely.
+#
+# A domain covers its subdomains, so "facebook.com" also covers
+# "m.facebook.com". Applications are named by their desktop entry, which is
+# what Anchor shows in the list of installed applications.
+
+name = "Social media"
+
+domains = [
+  "facebook.com",
+  "instagram.com",
+  "threads.net",
+  "x.com",
+  "twitter.com",
+  "tiktok.com",
+  "snapchat.com",
+  "reddit.com",
+  "tumblr.com",
+  "pinterest.com",
+  "linkedin.com",
+  "discord.com",
+  "discordapp.com",
+  "mastodon.social",
+  "bsky.app",
+  "vk.com",
+  "weibo.com",
+]
+
+# SPEC 9's own example: blocking the program without discord.com blocks
+# nothing much, because the site is the same thing in a browser.
+apps = [
+  "discord.desktop",
+  "com.discordapp.Discord.desktop",
+  "slack.desktop",
+  "com.slack.Slack.desktop",
+  "org.telegram.desktop.desktop",
+  "telegram-desktop.desktop",
+]
