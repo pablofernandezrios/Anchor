@@ -47,3 +47,35 @@ jobs:
         run: pytest -m "not needs_root and not needs_systemd and not needs_display" --cov --cov-report=term-missing
       - name: Coverage gate for engine logic
         run: python tools/check_coverage.py
+
+  leaks:
+    name: Leak tests on a real machine
+    runs-on: ubuntu-24.04
+    # These load real firewall rules and redirect real DNS, so they need a
+    # virtual machine rather than a container. GitHub's Ubuntu runners are
+    # exactly that, which is why SPEC 8.4 can be proved on every push rather
+    # than by hand in a VM.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install what the blocker needs
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq nftables systemd-resolved
+      - name: Prove a blocked domain cannot be reached (SPEC 8.4)
+        run: sudo -E python3 tests/system/leak_test.py "$GITHUB_WORKSPACE/leak-results"
+      - name: Confirm the machine was left working
+        if: always()
+        run: |
+          echo "## After the leak tests" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo '```'
+            echo "nftables tables:"; sudo nft list tables || true
+            echo "resolution:"; getent hosts github.com || echo "  BROKEN"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: leak-results
+          path: leak-results/
