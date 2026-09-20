@@ -192,10 +192,28 @@ def _report_snap_confinement(report: SpikeReport) -> None:
     )
 
 
+RUNNING_WARNING = """
+!!! Firefox is running right now, and this check cannot work while it is.
+
+Firefox reads managed policies ONCE, when it starts. An instance that was
+already running before the policy file existed will show an empty
+about:policies whether or not the Snap can read /etc/firefox/policies, so the
+result would tell you nothing.
+
+Quit Firefox completely first: close every window, then confirm with
+
+    pgrep -af firefox
+
+and run this again. Opening a new tab or window is not enough, and neither is
+`snap run firefox` while an instance is alive: that hands the request to the
+process that is already there.
+"""
+
 SNAP_CHECK = """
 The policy is now in place. To confirm the Snap Firefox actually reads it:
 
-  1. Open Firefox   (the Snap one: `snap run firefox`, or the dock icon)
+  1. START Firefox now, from cold. It must not have been running when this
+     script wrote the policy, or it will not have read it.
   2. Go to          about:policies
   3. On the "Active" tab, look for:
 
@@ -217,6 +235,46 @@ writes the policy only, no firewall rules and no resolver.
 """
 
 
+def firefox_processes() -> list[str]:
+    """Any running Firefox, which would invalidate the check."""
+    result = run("pgrep", "-af", "firefox")
+    if not result.ok:
+        return []
+    return [
+        line
+        for line in result.out.splitlines()
+        # The spike's own pgrep, and anything merely mentioning the word.
+        if "firefox" in line.lower() and "pgrep" not in line
+    ]
+
+
+def snap_interfaces(report_lines: list[str]) -> None:
+    """Show whether the Snap is even allowed to read /etc/firefox.
+
+    The Ubuntu Firefox snap reaches the policy directory through a system-files
+    interface. If that is not connected, the Snap cannot see the file however
+    correct the file is, and that is a different answer from the Snap ignoring
+    it.
+    """
+    result = run("snap", "connections", "firefox")
+    if not result.ok:
+        report_lines.append("  (snap connections unavailable)")
+        return
+
+    relevant = [
+        line
+        for line in result.out.splitlines()
+        if "policies" in line or "system-files" in line or "etc-firefox" in line
+    ]
+    if relevant:
+        report_lines.extend(f"  {line}" for line in relevant)
+    else:
+        report_lines.append(
+            "  no policy-related interface is listed, which would explain a "
+            "Snap that cannot read /etc/firefox/policies"
+        )
+
+
 def snap_check() -> int:
     """Write the Firefox policy, wait to be told, then take it away again.
 
@@ -228,6 +286,20 @@ def snap_check() -> int:
     if os.geteuid() != 0:
         print("this needs root: it writes /etc/firefox/policies/policies.json", file=sys.stderr)
         return 2
+
+    running = firefox_processes()
+    if running:
+        print(RUNNING_WARNING)
+        for line in running[:5]:
+            print(f"    {line}")
+        return 1
+
+    interfaces: list[str] = []
+    snap_interfaces(interfaces)
+    if interfaces:
+        print("Snap interfaces that bear on this:")
+        print("\n".join(interfaces))
+        print()
 
     target = Path("/etc/firefox/policies/policies.json")
     existed = target.exists()

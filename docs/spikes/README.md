@@ -15,7 +15,7 @@ on a desktop VM.
 | 3 | Netlink proc connector | CI VM | **Works** |
 | 4 | StatusNotifier/AppIndicator on GNOME | Desktop VM | **Works** over D-Bus, no AppIndicator library ([ADR 3](../adr/0003-speak-statusnotifieritem-over-dbus.md)) |
 | 5 | Fullscreen break overlay on Wayland | Desktop VM | **Works** on one display; multi-monitor untested. Limits settled by [ADR 2](../adr/0002-what-a-break-can-and-cannot-enforce.md) |
-| 6 | Browser DoH policy paths | Desktop VM | Firefox paths confirmed; **Snap DoH check is one command away** |
+| 6 | Browser DoH policy paths | Desktop VM | Firefox paths confirmed; **Snap DoH inconclusive, re-test pending** |
 | 7 | Runtime `RefuseManualStop` drop-in | CI VM | **Works** |
 
 **Nothing contradicts the specification.** Two points needed decisions and
@@ -251,6 +251,29 @@ Then in the Snap Firefox, `about:policies` → **Active** should list
 `DNSOverHTTPS` as `{"Enabled": false, "Locked": true}`. An empty Active tab, or
 one without that entry, is the answer that matters: it would mean the Snap does
 not read `/etc/firefox/policies`.
+
+### First attempt: inconclusive
+
+The first run reported that the enterprise policy service was inactive and that
+DNS-over-HTTPS was still under the user's control. That looks like a clear
+failure, and it is not, because **Firefox was already running when the policy
+was written**.
+
+Firefox reads managed policies once, at startup. An instance that began before
+the file existed shows an empty `about:policies` whether or not the Snap can
+read `/etc/firefox/policies`, so the two outcomes are indistinguishable. Worse,
+`snap run firefox` against a live instance just opens a tab in it, so it looks
+like starting the browser without starting anything.
+
+The check now refuses to run while any Firefox process is alive, and says why.
+It also prints the Snap's interface connections first: the Ubuntu Firefox snap
+reaches that directory through a system-files interface, and an unconnected
+interface would mean the Snap *cannot* see the file, which is a different
+answer from the Snap ignoring it — and one with a fix.
+
+**Until this is re-run from cold, treat Snap Firefox as able to bypass Anchor
+through DoH.** The firewall rules still reject the shipped DoH endpoints, so
+this is the second line rather than the only one.
 
 Until that is confirmed, **Snap Firefox is assumed able to bypass Anchor
 through DoH**. That is not fatal to Milestone 2: the nftables rules block the
