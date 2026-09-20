@@ -82,6 +82,7 @@ EVENT_TYPES: Final = frozenset(
         "session.tick",
         "session.ended",
         "session.extended",
+        "break.warning",
         "break.started",
         "break.ended",
         "valve.requested",

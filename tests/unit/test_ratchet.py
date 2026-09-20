@@ -100,3 +100,29 @@ class TestSessionChanges:
         check_session_change(
             Level.STRICT, Level.STRICT, valve_before=Valve.BOTH, valve_after=Valve.BOTH
         )
+
+
+class TestBreakWarning:
+    """A break that cannot be skipped must be announced first (ADR 2)."""
+
+    def test_a_warning_lead_time_is_set_by_default(self) -> None:
+        from anchor.engine.profiles import BreakSettings
+
+        assert BreakSettings().warning_seconds == 60
+
+    def test_the_warning_cannot_start_before_the_work_period(self) -> None:
+        from anchor.engine.profiles import BreakSettings
+
+        with pytest.raises(ValueError, match="before the work period"):
+            BreakSettings(work_minutes=1, break_minutes=5, warning_seconds=60)
+
+    def test_the_warning_can_be_turned_off(self) -> None:
+        from anchor.engine.profiles import BreakSettings
+
+        assert BreakSettings(warning_seconds=0).warning_seconds == 0
+
+    def test_the_warning_survives_a_round_trip(self) -> None:
+        from anchor.engine.profiles import BreakSettings
+
+        settings = BreakSettings(warning_seconds=120)
+        assert BreakSettings.from_dict(settings.to_dict()) == settings

@@ -72,6 +72,11 @@ Read these before trusting Anchor with anything important.
 - **Allowlist mode needs tuning.** Most sites load resources from other domains,
   so expect to add entries. A small built-in essentials list keeps connectivity
   checks and time sync working.
+- **Breaks insist, they do not force.** Wayland gives no way for a program to
+  take over your screen, and Anchor does not try. A break you cannot skip or
+  postpone is announced before it starts, shown on the top bar, and covers
+  every monitor when it begins — but you can still switch away from it. The
+  clock keeps running either way.
 - **VPN and Tor blocking is best effort.** Common protocols and known relays are
   blocked in Strict sessions; obfuscated tunnels can get through.
 - **One user per machine.** Blocks apply to the whole system.

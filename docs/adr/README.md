@@ -11,3 +11,4 @@ earlier one.
 | # | Title | Status |
 |---|---|---|
 | [1](0001-run-m0-spikes-and-the-m1-core-concurrently.md) | Run the Milestone 0 spikes and the Milestone 1 core concurrently | Accepted |
+| [2](0002-what-a-break-can-and-cannot-enforce.md) | What a break can and cannot enforce on Wayland | Accepted |

@@ -31,11 +31,23 @@ class BreakSettings:
     long_break_minutes: int | None = None
     allow_sites_during_breaks: bool = False
 
+    warning_seconds: int = 60
+    """How long before a break starts to warn the user (ADR 2).
+
+    A break Anchor will not let you skip must never arrive unannounced, so the
+    warning is part of the profile rather than something the interface decides.
+    Zero turns it off.
+    """
+
     def __post_init__(self) -> None:
         if self.work_minutes <= 0 or self.break_minutes <= 0:
             raise ValueError("break pattern needs positive work and break lengths")
         if self.long_break_every is not None and self.long_break_every <= 0:
             raise ValueError("long_break_every must be positive when set")
+        if self.warning_seconds < 0:
+            raise ValueError("warning_seconds cannot be negative")
+        if self.warning_seconds >= self.work_minutes * 60:
+            raise ValueError("the break warning cannot start before the work period does")
 
     @property
     def pattern_name(self) -> str:
@@ -53,6 +65,7 @@ class BreakSettings:
             "long_break_every": self.long_break_every,
             "long_break_minutes": self.long_break_minutes,
             "allow_sites_during_breaks": self.allow_sites_during_breaks,
+            "warning_seconds": self.warning_seconds,
         }
 
     @classmethod
@@ -65,6 +78,7 @@ class BreakSettings:
             long_break_every=raw.get("long_break_every"),
             long_break_minutes=raw.get("long_break_minutes"),
             allow_sites_during_breaks=bool(raw.get("allow_sites_during_breaks", False)),
+            warning_seconds=int(raw.get("warning_seconds", 60)),
         )
 
 

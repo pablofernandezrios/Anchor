@@ -14,12 +14,13 @@ on a desktop VM.
 | 2 | nftables DNS redirect exempting the resolver | CI VM | **Works** |
 | 3 | Netlink proc connector | CI VM | **Works** |
 | 4 | StatusNotifier/AppIndicator on GNOME | Desktop VM | Pending |
-| 5 | Fullscreen break overlay on Wayland | Desktop VM | Limits established, run pending |
+| 5 | Fullscreen break overlay on Wayland | Desktop VM | **Limits established and settled by [ADR 2](../adr/0002-what-a-break-can-and-cannot-enforce.md)**; run still pending |
 | 6 | Browser DoH policy paths | Desktop VM | Pending |
 | 7 | Runtime `RefuseManualStop` drop-in | CI VM | **Works** |
 
-Nothing so far contradicts the specification. One point in SPEC 10 needs a
-qualification, and it is the only item needing a decision (spike 5).
+Nothing so far contradicts the specification. The one point that needed a
+decision, what a Mandatory break can actually enforce, is settled by
+[ADR 2](../adr/0002-what-a-break-can-and-cannot-enforce.md).
 
 ---
 
@@ -145,10 +146,14 @@ above everything, and GNOME does not implement the layer-shell protocol that
 wlroots compositors offer. A client also cannot grab the keyboard.
 
 **So a Mandatory break cannot mean the screen is seized.** The user can always
-switch away. It can only mean the overlay returns, promptly and repeatedly, for
-as long as the break lasts. That is a real difference from what "mandatory"
-suggests, it belongs in the README's limitations, and **it needs the owner's
-agreement before Milestone 5 builds it.**
+switch away.
+
+**Settled.** The owner's decision, recorded in
+[ADR 2](../adr/0002-what-a-break-can-and-cannot-enforce.md): the three hardness
+levels stay and Mandatory still refuses skipping and postponing, but the break
+is enforced by being impossible to miss rather than by force. A warning before
+it starts, the time always visible, an alert when it begins, and an overlay
+that asks to be presented again if it loses focus. Milestone 5 builds that.
 
 ---
 
