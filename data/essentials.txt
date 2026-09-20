@@ -1,0 +1,31 @@
+# Anchor essentials (SPEC 8.1)
+#
+# Domains Anchor allows so the machine keeps working, even in allowlist mode
+# where everything unnamed is blocked. Without these, a focus session would
+# leave the desktop thinking it has no internet and the clock drifting.
+#
+# Deliberately short. This is not a list of useful sites; it is the minimum a
+# Linux desktop needs to know it is online and what time it is. Anything you
+# actually want to reach belongs in your profile.
+#
+# One domain per line. A domain covers its subdomains. Lines starting with #
+# are ignored. Edit freely: this file is yours, and package upgrades will not
+# silently overwrite your changes.
+
+# --- Connectivity checks -------------------------------------------------
+# The desktop pings these to decide whether it is online, and to notice a
+# captive portal. Blocking them makes GNOME show "no internet" all session.
+connectivity-check.ubuntu.com
+nmcheck.gnome.org
+network-test.debian.org
+detectportal.firefox.com
+captive.apple.com
+
+# --- Time synchronisation ------------------------------------------------
+# Anchor measures sessions against the boot clock, so a drifting wall clock
+# cannot shorten one (SPEC 6.2). These are here for the rest of the system:
+# certificate validation starts failing on a machine whose clock is wrong.
+pool.ntp.org
+ntp.ubuntu.com
+time.cloudflare.com
+time.windows.com
