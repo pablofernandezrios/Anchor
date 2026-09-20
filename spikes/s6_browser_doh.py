@@ -322,7 +322,12 @@ def snap_check() -> int:
         merged["policies"] = policies
 
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(merged, indent=2) + "\\n", encoding="utf-8")
+        content = json.dumps(merged, indent=2) + "\n"
+        # Parse it back before handing it to a browser. Firefox reports a
+        # malformed policy file as a policy error, which is indistinguishable
+        # from the answer this spike exists to find.
+        json.loads(content)
+        target.write_text(content, encoding="utf-8")
 
         print(SNAP_CHECK)
         input("Press Enter when you have looked, and the policy will be removed: ")

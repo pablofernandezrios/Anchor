@@ -133,6 +133,17 @@ def _merge_firefox(existing: str | None) -> str:
     return json.dumps(document, indent=2) + "\n"
 
 
+def _checked(content: str) -> str:
+    """Parse a policy back before writing it.
+
+    A browser reports a malformed policy file as a policy error and applies
+    nothing, which looks exactly like Anchor never writing one. Catching it
+    here turns a silent failure into a loud one.
+    """
+    json.loads(content)
+    return content
+
+
 def apply_policies(journal: Journal, *, root: Path | None = None) -> list[str]:
     """Disable DoH in every installed browser. Returns the ones configured."""
     configured: list[str] = []
@@ -145,12 +156,12 @@ def apply_policies(journal: Journal, *, root: Path | None = None) -> list[str]:
         try:
             if browser.merges:
                 existing = target.read_text(encoding="utf-8") if target.exists() else None
-                content = _merge_firefox(existing)
+                content = _checked(_merge_firefox(existing))
             else:
-                content = json.dumps(CHROMIUM_POLICY, indent=2) + "\n"
+                content = _checked(json.dumps(CHROMIUM_POLICY, indent=2) + "\n")
 
             journal.write_file(target, content)
-        except OSError as error:
+        except (OSError, json.JSONDecodeError) as error:
             log.warning("could not write the %s policy at %s: %s", browser.name, target, error)
             continue
 

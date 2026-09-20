@@ -167,3 +167,33 @@ class TestRestoring:
         restore_everything(journal, runner=RecordingRunner())
 
         assert existing.read_text(encoding="utf-8") == original
+
+
+class TestWhatIsWrittenIsValidJson:
+    """A browser reports a malformed policy as a policy error and applies
+    nothing, which looks exactly like Anchor never writing one. That is how a
+    literal backslash-n in the spike's writer went unnoticed until Firefox
+    itself complained about it.
+    """
+
+    def test_the_firefox_policy_parses(self, journal: Journal, root: Path) -> None:
+        install(root, "/usr/bin/firefox")
+        apply_policies(journal, root=root)
+
+        raw = (root / "etc/firefox/policies/policies.json").read_text(encoding="utf-8")
+        json.loads(raw)  # raises if anything follows the JSON
+
+    def test_the_chromium_policy_parses(self, journal: Journal, root: Path) -> None:
+        install(root, "/usr/bin/chromium")
+        apply_policies(journal, root=root)
+
+        raw = (root / "etc/chromium/policies/managed/anchor.json").read_text(encoding="utf-8")
+        json.loads(raw)
+
+    def test_nothing_follows_the_closing_brace(self, journal: Journal, root: Path) -> None:
+        install(root, "/usr/bin/firefox")
+        apply_policies(journal, root=root)
+
+        raw = (root / "etc/firefox/policies/policies.json").read_text(encoding="utf-8")
+        assert raw.rstrip().endswith("}")
+        assert raw[len(raw.rstrip()) :] == "\n", "something other than a newline trails the JSON"
