@@ -20,5 +20,9 @@ pre_remove() {
   rm -f /run/systemd/system/anchord.service.d/anchor-session.conf
   rm -f /run/systemd/system/anchor-blockerd.service.d/anchor-session.conf
   systemctl daemon-reload || true
-  # Milestone 2 adds the DNS, nftables and browser-policy restoration here.
+  # Undo DNS, firewall rules and browser policies. A failure must not abort
+  # the removal (SPEC 7.6).
+  if command -v anchor-blockerd >/dev/null 2>&1; then
+    anchor-blockerd --restore || true
+  fi
 }

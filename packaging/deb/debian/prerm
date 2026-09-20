@@ -14,9 +14,15 @@ case "$1" in
       /run/systemd/system/anchor-blockerd.service.d 2>/dev/null || true
     systemctl daemon-reload || true
 
-    # Milestone 2 adds the DNS, nftables and browser-policy restoration here,
-    # through `anchor-blockerd --restore`. Milestone 1 installs none of that,
-    # so there is nothing further to undo yet.
+    # Undo the DNS configuration, the firewall rules and the browser
+    # policies. Always allowed, session or not (SPEC 7.6). A failure here must
+    # not abort the removal: a package that cannot be uninstalled is worse
+    # than one that leaves a file behind, and anything that could break
+    # networking lives in /run and is gone at the next boot anyway.
+    if command -v anchor-blockerd >/dev/null 2>&1; then
+      anchor-blockerd --restore || \
+        echo "anchor: some changes could not be undone; a reboot clears the rest" >&2
+    fi
     ;;
 esac
 
