@@ -52,16 +52,62 @@ def _clock(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp).strftime("%H:%M")
 
 
+class _Commands:
+    """``add_subparsers`` with the shared options attached to every command."""
+
+    def __init__(self, actions: Any, common: argparse.ArgumentParser) -> None:
+        self._actions = actions
+        self._common = common
+
+    def add_parser(self, name: str, **kwargs: Any) -> argparse.ArgumentParser:
+        parser: argparse.ArgumentParser = self._actions.add_parser(
+            name, parents=[self._common], **kwargs
+        )
+        return parser
+
+    def add_subparsers(self, **kwargs: Any) -> _Commands:
+        return _Commands(self._actions.add_subparsers(**kwargs), self._common)
+
+
+def _everywhere() -> argparse.ArgumentParser:
+    """The options SPEC 15 puts on every command.
+
+    Held apart and given to each subcommand as well as to the top level, so
+    that both ``anchor --json status`` and ``anchor status --json`` work.
+    People type the second one, and argparse would otherwise answer it with a
+    usage error.
+
+    ``SUPPRESS`` is the important part: without it every subcommand would
+    carry its own default of False and quietly overwrite a ``--json`` given
+    before the command.
+    """
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
+        "--json",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Print the raw engine reply.",
+    )
+    # Not in the specification's list, but it would be strange for one global
+    # option to work after the command and the other not to.
+    common.add_argument(
+        "--root",
+        default=argparse.SUPPRESS,
+        help="Talk to an engine running on a relocated tree.",
+    )
+    return common
+
+
 def build_parser() -> argparse.ArgumentParser:
+    common = _everywhere()
     parser = argparse.ArgumentParser(
         prog="anchor",
         description="Focus sessions that are hard to walk away from.",
+        parents=[common],
     )
     parser.add_argument("--version", action="version", version=f"anchor {__version__}")
-    parser.add_argument("--json", action="store_true", help="Print the raw engine reply.")
-    parser.add_argument("--root", help="Talk to an engine running on a relocated tree.")
 
-    commands = parser.add_subparsers(dest="command", required=True)
+    commands = _Commands(parser.add_subparsers(dest="command", required=True), common)
 
     commands.add_parser("status", help="Show the active session, if there is one.")
 
@@ -90,7 +136,7 @@ def build_parser() -> argparse.ArgumentParser:
     cancel.add_argument("--withdraw", action="store_true", help="Change your mind about leaving.")
 
     profile = commands.add_parser("profile", help="The named sets of rules sessions use.")
-    profile_actions = profile.add_subparsers(dest="action", required=True)
+    profile_actions = _Commands(profile.add_subparsers(dest="action", required=True), common)
     profile_actions.add_parser("list", help="List the profiles you have.")
 
     show = profile_actions.add_parser("show", help="Show what a profile blocks.")
@@ -130,20 +176,34 @@ def build_parser() -> argparse.ArgumentParser:
     category = commands.add_parser(
         "category", help="The shipped bundles of domains and applications."
     )
-    category_actions = category.add_subparsers(dest="action", required=True)
+    category_actions = _Commands(category.add_subparsers(dest="action", required=True), common)
     category_actions.add_parser("list", help="List the categories installed here.")
     category_show = category_actions.add_parser("show", help="Show what a category covers.")
     category_show.add_argument("name", help="The category's identifier, as `list` prints it.")
 
+    stats = commands.add_parser("stats", help="What Anchor has been doing (SPEC 13).")
+    stats.add_argument("--day", dest="range", action="store_const", const="day", help="Today.")
+    stats.add_argument(
+        "--week", dest="range", action="store_const", const="week", help="This week."
+    )
+    stats.add_argument(
+        "--month", dest="range", action="store_const", const="month", help="This month."
+    )
+    stats.add_argument(
+        "--delete",
+        action="store_true",
+        help="Delete every statistic. Asks first, and cannot be undone.",
+    )
+
     breaks = commands.add_parser(
         "break", help="The break that is running, if the profile lets you avoid it."
     )
-    break_actions = breaks.add_subparsers(dest="action", required=True)
+    break_actions = _Commands(breaks.add_subparsers(dest="action", required=True), common)
     break_actions.add_parser("skip", help="Give it up. Flexible profiles only.")
     break_actions.add_parser("postpone", help="Push it back five minutes.")
 
     valve = commands.add_parser("valve", help="The emergency exit from a Strict session.")
-    valve_actions = valve.add_subparsers(dest="action", required=True)
+    valve_actions = _Commands(valve.add_subparsers(dest="action", required=True), common)
     valve_actions.add_parser("request", help="Ask to be let out.")
     valve_actions.add_parser("withdraw", help="Take the request back.")
     phrase = valve_actions.add_parser("phrase", help="Type the phrase Anchor generated.")
@@ -169,9 +229,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 128 + signal.SIGINT
 
 
-def _run(argv: Sequence[str] | None) -> int:
+def parse_args(argv: Sequence[str] | None) -> tuple[argparse.ArgumentParser, argparse.Namespace]:
+    """Parse, and fill in the options that were not given anywhere.
+
+    The shared options are declared with ``SUPPRESS`` so that a value given
+    before the command is not overwritten by a subcommand's default. Nothing
+    then sets them when they are absent from both, so it is done here.
+
+    They cannot be given a default with ``set_defaults`` instead: that method
+    writes the default onto the action object, and ``parents=`` shares one
+    action between the top level and every subcommand, so it would put the
+    overwriting default back on all of them. That is the bug this replaced —
+    ``anchor --json stats`` quietly printed the human output.
+    """
     parser = build_parser()
     args = parser.parse_args(argv)
+    for name, fallback in (("json", False), ("root", None)):
+        if not hasattr(args, name):
+            setattr(args, name, fallback)
+    return parser, args
+
+
+def _run(argv: Sequence[str] | None) -> int:
+    parser, args = parse_args(argv)
 
     try:
         type_, payload = _request_for(args)
@@ -236,6 +316,12 @@ def _request_for(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
         case "break":
             return f"break.{args.action}", {}
 
+        case "stats":
+            if args.delete:
+                _confirm_deletion()
+                return "stats.delete", {}
+            return "stats.query", {"range": args.range or "week"}
+
         case "valve":
             match args.action:
                 case "request":
@@ -287,6 +373,20 @@ def _profile_request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
     raise ValueError(f"unknown profile action {args.action!r}")
 
 
+def _confirm_deletion() -> None:
+    """Ask before deleting a history that cannot be recovered (SPEC 13).
+
+    One action deletes all statistics, and this is that action, so it says
+    plainly what it is about to do. Anchor keeps no copy: there is nothing to
+    restore from, by design, because a private record that quietly survives
+    its own deletion is not private.
+    """
+    print("This deletes every statistic Anchor has recorded. It cannot be undone.")
+    print("Type 'delete' to go ahead:")
+    if sys.stdin.readline().strip().lower() != "delete":
+        raise ValueError("nothing was deleted")
+
+
 def _prompt_for_phrase() -> str:
     """Read the phrase from the terminal (SPEC 7.5).
 
@@ -314,8 +414,46 @@ def _render(args: argparse.Namespace, result: dict[str, Any]) -> int:
         return EXIT_OK
     if args.command == "category":
         return _render_category(args, result)
+    if args.command == "stats":
+        _render_stats(result)
+        return EXIT_OK
     _render_status(result)
     return EXIT_OK
+
+
+def _render_stats(result: dict[str, Any]) -> None:
+    """The statistics page, as far as a terminal can draw it (SPEC 13, 15)."""
+    if result.get("deleted"):
+        print("Every statistic has been deleted.")
+        return
+
+    print(f"{result['first_day']} to {result['last_day']}\n")
+    print(f"  Focus                {format_duration(result['focus_seconds'])}")
+    print(f"  Sessions completed   {result['sessions_completed']}")
+    print(f"  Blocked attempts     {result['blocked_attempts']}")
+    print(f"  Ruptures             {result['ruptures']}")
+
+    attempts = result.get("attempts_by_target") or []
+    if attempts:
+        print("\nBlocked most often")
+        for entry in attempts:
+            name = entry["target"] + (" (app)" if entry["kind"] == "app" else "")
+            print(f"  {name:<40} {entry['count']}")
+
+    breaks = result.get("breaks") or {}
+    if breaks:
+        print(
+            f"\nBreaks: {breaks.get('taken', 0)} taken · "
+            f"{breaks.get('postponed', 0)} postponed · {breaks.get('skipped', 0)} skipped"
+        )
+
+    ruptures = result.get("ruptures_by_kind") or {}
+    if ruptures:
+        print(
+            f"Ruptures: {ruptures.get('valve', 0)} valve · "
+            f"{ruptures.get('skip', 0)} skipped schedule · "
+            f"{ruptures.get('tampering', 0)} tampering"
+        )
 
 
 def _render_category(args: argparse.Namespace, result: dict[str, Any]) -> int:

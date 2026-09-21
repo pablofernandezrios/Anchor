@@ -108,6 +108,9 @@ REQUEST_SCHEMAS: Final[dict[str, Schema]] = {
     "stats.query": Schema(
         range=Field(str, choices=("day", "week", "month"), required=False, default="week"),
     ),
+    # SPEC 13: one action deletes all statistics. It is spelled out rather
+    # than being a flag on the query, so that nothing deletes by accident.
+    "stats.delete": EMPTY,
     "config.get": Schema(key=Field(str, required=False, default=None)),
     "config.set": Schema(key=Field(str), value=Field(str)),
     "doctor.run": EMPTY,

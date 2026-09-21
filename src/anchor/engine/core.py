@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +40,7 @@ from anchor.engine.sessions import (
     start_session,
 )
 from anchor.engine.state import EngineState
-from anchor.engine.stats import Statistics
+from anchor.engine.stats import Statistics, summarise
 from anchor.engine.store import LoadStatus, SignedStore, load_or_create_key
 from anchor.engine.timekeeping import Clock, SystemClock, reconcile
 from anchor.protocol.errors import AnchorError, ErrorCode, RatchetViolationError
@@ -243,6 +244,8 @@ class Engine:
             "profile.delete": self._on_profile_delete,
             "policy.get": self._on_policy,
             "category.list": self._on_category_list,
+            "stats.query": self._on_stats_query,
+            "stats.delete": self._on_stats_delete,
             "blocked.report": self._on_blocked_report,
             "apps.report": self._on_apps_report,
             "tamper.report": self._on_tamper_report,
@@ -448,6 +451,28 @@ class Engine:
         return request.ok(
             {"categories": [category.to_dict() for category in _by_name(self.categories)]}
         )
+
+    def _on_stats_query(self, request: Request) -> Response:
+        """One range of statistics (SPEC 13).
+
+        Today is taken from the engine's clock rather than from the caller,
+        so that two clients asking at the same moment cannot disagree about
+        what day it is.
+        """
+        view = str(request.payload["range"])
+        today = datetime.fromtimestamp(self.clock.wall()).date()
+        return request.ok(summarise(self.stats, view, today=today).to_dict())
+
+    def _on_stats_delete(self, request: Request) -> Response:
+        """Delete every statistic (SPEC 13).
+
+        Allowed during a session, and not subject to the ratchet. Statistics
+        are a record of what Anchor did, not part of what it is enforcing, and
+        a person who wants their own history gone should not have to wait for
+        a session to end to be rid of it.
+        """
+        self.stats.delete_everything()
+        return request.ok({"deleted": True})
 
     def _on_blocked_report(self, request: Request) -> Response:
         """Record an attempt the blocker refused (SPEC 8.3, 13)."""

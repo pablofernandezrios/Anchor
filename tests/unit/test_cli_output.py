@@ -112,3 +112,46 @@ class TestRenderingCategories:
 
         assert code == 1
         assert text == ""
+
+
+class TestOptionsThatWorkAnywhere:
+    """SPEC 15: `--json` on every command, wherever a person puts it.
+
+    Both positions matter. People type `anchor stats --json` far more often
+    than `anchor --json stats`, and argparse answers the first one with a
+    usage error unless every subcommand is given the option too.
+    """
+
+    def parsed(self, *argv: str) -> object:
+        from anchor.cli.main import parse_args
+
+        _parser, args = parse_args(list(argv))
+        return args
+
+    def test_json_before_the_command(self) -> None:
+        assert self.parsed("--json", "status").json is True  # type: ignore[attr-defined]
+
+    def test_json_after_the_command(self) -> None:
+        assert self.parsed("status", "--json").json is True  # type: ignore[attr-defined]
+
+    def test_json_after_a_nested_command(self) -> None:
+        assert self.parsed("profile", "list", "--json").json is True  # type: ignore[attr-defined]
+
+    def test_it_is_off_when_nobody_asked(self) -> None:
+        assert self.parsed("status").json is False  # type: ignore[attr-defined]
+
+    def test_a_subcommand_does_not_overwrite_the_global(self) -> None:
+        """The bug this guards: a shared action's default clobbered it.
+
+        `set_defaults` writes the default onto the action object, and
+        `parents=` shares one action between the top level and every
+        subcommand, so `anchor --json stats` quietly printed human output.
+        """
+        assert self.parsed("--json", "stats", "--day").json is True  # type: ignore[attr-defined]
+
+    def test_root_works_in_both_places_too(self) -> None:
+        assert self.parsed("--root", "/tmp/a", "status").root == "/tmp/a"  # type: ignore[attr-defined]
+        assert self.parsed("status", "--root", "/tmp/b").root == "/tmp/b"  # type: ignore[attr-defined]
+
+    def test_and_is_none_when_nobody_asked(self) -> None:
+        assert self.parsed("status").root is None  # type: ignore[attr-defined]

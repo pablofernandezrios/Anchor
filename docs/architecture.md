@@ -38,7 +38,8 @@ a change can be refused.
 src/anchor/
   protocol/    types, error codes, schema validation, message envelopes
   engine/      paths, store, timekeeping, sessions, breaks, ratchet,
-               profiles, categories, phrases, state, core, service, main
+               profiles, categories, stats, phrases, state, core, service,
+               main
   blocker/     journal, restore, constants, commands, dnswire, matcher,
                recent, attempts, resolver, rules, resolved, policies,
                apps, processes, watcher, enforcement, daemon, main
@@ -412,6 +413,43 @@ What the overlay says is composed in `breakscreen.py` from the approved
 mockup, and tested where there is no display. `overlay.py` is GTK and nothing
 else.
 
+## Statistics
+
+SQLite in `/var/lib/anchor/stats.db`, written only by the engine (SPEC 13).
+No telemetry, and nothing leaves the machine.
+
+**This is the one place a visited domain is written down.** The working rules
+forbid them everywhere else, and they never reach the journal. SPEC 13 limits
+even this to how often a name was asked for and how often it was refused:
+there is no record of how long anything was looked at, because that would be a
+record of a person's day rather than of Anchor's work.
+
+**Focus is stored in day buckets**, split at local midnight when a session
+ends. A session from 23:00 to 01:00 is two hours across two days, and saying
+so costs one small function; attributing it to the day it began would
+overstate one day and empty the next. The bar chart the interface draws is
+then a straight sum, and every day in a range appears even when it is empty —
+a chart with days missing lies about the shape of a week.
+
+**Breaks are recorded from the counters, not from the events.** An absence
+that covers a break counts it as taken and publishes nothing, so a statistic
+that counted announcements would lose exactly the breaks nobody was there for.
+
+**Nothing here may end a session.** A statistic is a nice-to-have and a
+session is not, so every write is allowed to fail: it is logged and the engine
+carries on (P4). That includes a database that will not even open, which is
+the case worth naming, because a context manager that raises before it yields
+takes its caller down with it.
+
+Retention is swept when a session ends rather than on a timer. A timer that
+exists to delete things is a thing that can fail quietly for months, and a
+session ending is both frequent enough and already a moment when the engine
+is writing.
+
+`anchor stats --delete` is SPEC 13's one action. There is nothing to restore
+from afterwards, by design: a private record that quietly survives its own
+deletion is not private.
+
 ## Anti-evasion
 
 Everything here is friction rather than a lock, as P2 requires, and each piece
@@ -443,5 +481,5 @@ mean blocking the web.
 
 ## Not built yet
 
-Schedules, statistics, the interface, and the packages. The milestones in the build plan cover them, and
+Schedules, the interface, and the packages. The milestones in the build plan cover them, and
 `docs/spikes/` records what was learned before building each one.

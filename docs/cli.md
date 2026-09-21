@@ -16,6 +16,9 @@ machine-readable with `--json`.
 | `--root PATH` | Talk to an engine running on a relocated tree. Development only. |
 | `--version` | Print the version. |
 
+`--json` and `--root` work before the command or after it, so both
+`anchor --json stats` and `anchor stats --json` do the same thing.
+
 ## Commands
 
 ### `anchor status`
@@ -207,11 +210,57 @@ In an allowlist profile a category still blocks its applications, but its
 domains are ignored: adding them to the list of what is allowed would turn
 "block social media" into "social media is the only thing you may read".
 
+### `anchor stats [--day|--week|--month]`
+
+What Anchor has been doing (SPEC 13). The week runs Monday to Sunday and the
+month is the calendar month, as the interface draws them. Without a range, it
+shows this week.
+
+```
+$ anchor stats --week
+2026-09-21 to 2026-09-27
+
+  Focus                21 h 12 min
+  Sessions completed   14
+  Blocked attempts     96
+  Ruptures             1
+
+Blocked most often
+  youtube.com                              41
+  reddit.com                               22
+  Discord (app)                             9
+
+Breaks: 23 taken · 5 postponed · 0 skipped
+Ruptures: 0 valve · 1 skipped schedule · 0 tampering
+```
+
+Applications appear in the same ranked list as domains, marked `(app)`,
+because "what did I try to reach" is one question.
+
+#### `anchor stats --delete`
+
+The one action that deletes every statistic (SPEC 13). It asks first, and
+there is nothing to restore from: Anchor keeps no copy, because a private
+record that quietly survives its own deletion is not private.
+
+```
+$ anchor stats --delete
+This deletes every statistic Anchor has recorded. It cannot be undone.
+Type 'delete' to go ahead:
+```
+
+Anything other than `delete` exits 2 and changes nothing. It works during a
+session and is not subject to the ratchet: statistics are a record of what
+Anchor did, not part of what it is enforcing.
+
+Statistics older than the retention window are swept whenever a session ends.
+The window is 90 days unless `anchor.toml` says otherwise.
+
 ### Planned
 
-`anchor skip`, `anchor category edit`, `anchor schedule`, `anchor stats`,
-`anchor config` and `anchor doctor` are specified in SPEC 15 and arrive with
-Milestones 7, 8 and 9.
+`anchor skip`, `anchor category edit`, `anchor schedule`, `anchor config`
+and `anchor doctor` are specified in SPEC 15 and arrive with Milestones 8
+and 9.
 
 ## Exit codes
 

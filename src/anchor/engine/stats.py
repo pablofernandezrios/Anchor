@@ -26,6 +26,7 @@ import logging
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -282,3 +283,142 @@ def range_bounds(view: str, today: date) -> tuple[date, date]:
             next_month = (first + timedelta(days=32)).replace(day=1)
             return first, next_month - timedelta(days=1)
     raise ValueError(f"unknown range {view!r}")
+
+
+@dataclass(frozen=True, slots=True)
+class Tally:
+    """One line of a ranked list: what was refused, and how often."""
+
+    target: str
+    kind: str
+    count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"target": self.target, "kind": self.kind, "count": self.count}
+
+
+@dataclass(frozen=True, slots=True)
+class Summary:
+    """A range of statistics, in the shape the mockup draws (SPEC 13, 14)."""
+
+    view: str
+    first_day: str
+    last_day: str
+
+    focus_seconds: float = 0.0
+    sessions_completed: int = 0
+    blocked_attempts: int = 0
+    ruptures: int = 0
+
+    focus_by_day: tuple[tuple[str, float], ...] = ()
+    attempts_by_target: tuple[Tally, ...] = ()
+    breaks: tuple[tuple[str, int], ...] = ()
+    ruptures_by_kind: tuple[tuple[str, int], ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "view": self.view,
+            "first_day": self.first_day,
+            "last_day": self.last_day,
+            "focus_seconds": self.focus_seconds,
+            "sessions_completed": self.sessions_completed,
+            "blocked_attempts": self.blocked_attempts,
+            "ruptures": self.ruptures,
+            "focus_by_day": [
+                {"day": day, "seconds": seconds} for day, seconds in self.focus_by_day
+            ],
+            "attempts_by_target": [tally.to_dict() for tally in self.attempts_by_target],
+            "breaks": dict(self.breaks),
+            "ruptures_by_kind": dict(self.ruptures_by_kind),
+        }
+
+
+#: How many entries the ranked list of refusals carries. The mockup shows
+#: five; more than that is a list nobody reads, and the total is above it.
+TOP_TARGETS = 10
+
+
+def summarise(stats: Statistics, view: str, *, today: date) -> Summary:
+    """Everything the statistics page shows for one range (SPEC 13).
+
+    Days rather than instants: the boundaries are local midnights, which is
+    what a person means by "this week", and what the ``focus`` table already
+    stores.
+    """
+    first, last = range_bounds(view, today)
+    start = datetime.combine(first, datetime.min.time()).timestamp()
+    end = datetime.combine(last + timedelta(days=1), datetime.min.time()).timestamp()
+
+    focus_rows = stats.rows(
+        "SELECT day, SUM(seconds) AS seconds FROM focus "
+        "WHERE day >= ? AND day <= ? GROUP BY day ORDER BY day",
+        (first.isoformat(), last.isoformat()),
+    )
+    focus_by_day = {row["day"]: float(row["seconds"] or 0.0) for row in focus_rows}
+
+    completed = stats.rows(
+        "SELECT COUNT(*) AS total FROM sessions "
+        "WHERE completed = 1 AND ended_at >= ? AND ended_at < ?",
+        (start, end),
+    )
+
+    attempts = stats.rows(
+        "SELECT target, kind, COUNT(*) AS total FROM attempts "
+        "WHERE at >= ? AND at < ? GROUP BY target, kind "
+        "ORDER BY total DESC, target ASC LIMIT ?",
+        (start, end, TOP_TARGETS),
+    )
+    attempt_total = stats.rows(
+        "SELECT COUNT(*) AS total FROM attempts WHERE at >= ? AND at < ?", (start, end)
+    )
+
+    breaks = stats.rows(
+        "SELECT outcome, COUNT(*) AS total FROM breaks "
+        "WHERE at >= ? AND at < ? GROUP BY outcome",
+        (start, end),
+    )
+    ruptures = stats.rows(
+        "SELECT kind, COUNT(*) AS total FROM ruptures " "WHERE at >= ? AND at < ? GROUP BY kind",
+        (start, end),
+    )
+
+    by_kind = {str(row["kind"]): int(row["total"]) for row in ruptures}
+    return Summary(
+        view=view,
+        first_day=first.isoformat(),
+        last_day=last.isoformat(),
+        focus_seconds=sum(focus_by_day.values()),
+        sessions_completed=int(completed[0]["total"]) if completed else 0,
+        blocked_attempts=int(attempt_total[0]["total"]) if attempt_total else 0,
+        ruptures=sum(by_kind.values()),
+        # Every day in the range, including the empty ones: a bar chart with
+        # days missing is a bar chart that lies about the shape of a week.
+        focus_by_day=tuple(
+            (day.isoformat(), focus_by_day.get(day.isoformat(), 0.0)) for day in _days(first, last)
+        ),
+        attempts_by_target=tuple(
+            Tally(target=str(row["target"]), kind=str(row["kind"]), count=int(row["total"]))
+            for row in attempts
+        ),
+        breaks=tuple(
+            (outcome, _count(breaks, "outcome", outcome))
+            for outcome in ("taken", "postponed", "skipped")
+        ),
+        ruptures_by_kind=tuple(
+            (kind, by_kind.get(kind, 0)) for kind in ("valve", "skip", "tampering")
+        ),
+    )
+
+
+def _days(first: date, last: date) -> Iterator[date]:
+    cursor = first
+    while cursor <= last:
+        yield cursor
+        cursor += timedelta(days=1)
+
+
+def _count(rows: list[sqlite3.Row], column: str, value: str) -> int:
+    for row in rows:
+        if str(row[column]) == value:
+            return int(row["total"])
+    return 0
