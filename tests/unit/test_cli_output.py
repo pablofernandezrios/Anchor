@@ -155,3 +155,91 @@ class TestOptionsThatWorkAnywhere:
 
     def test_and_is_none_when_nobody_asked(self) -> None:
         assert self.parsed("status").root is None  # type: ignore[attr-defined]
+
+
+class TestConfigCommand:
+    """`anchor config get|set` (SPEC 15)."""
+
+    def request(self, *argv: str) -> tuple[str, dict[str, object]]:
+        from anchor.cli.main import _request_for, parse_args
+
+        _parser, args = parse_args(list(argv))
+        return _request_for(args)
+
+    def render(self, result: dict[str, object]) -> str:
+        import argparse
+        import contextlib
+        import io
+
+        from anchor.cli.main import _render
+
+        out = io.StringIO()
+        args = argparse.Namespace(command="config", action="get")
+        with contextlib.redirect_stdout(out):
+            _render(args, result)
+        return out.getvalue()
+
+    @property
+    def settings(self) -> dict[str, object]:
+        return {
+            "settings": [
+                {
+                    "key": "firm_wait_seconds",
+                    "value": 900,
+                    "is_default": True,
+                    "explain": "How long a Firm session makes you wait.",
+                    "during_session": False,
+                },
+                {
+                    "key": "language",
+                    "value": "es",
+                    "is_default": False,
+                    "explain": "The interface language.",
+                    "during_session": True,
+                },
+            ]
+        }
+
+    def test_get_without_a_key_asks_for_everything(self) -> None:
+        assert self.request("config", "get") == ("config.get", {})
+
+    def test_get_with_a_key_asks_for_one(self) -> None:
+        assert self.request("config", "get", "language") == ("config.get", {"key": "language"})
+
+    def test_set_carries_the_value_as_text(self) -> None:
+        # The engine owns what each setting may hold, so the command line
+        # sends the characters the user typed and lets it judge them.
+        assert self.request("config", "set", "phrase_length", "200") == (
+            "config.set",
+            {"key": "phrase_length", "value": "200"},
+        )
+
+    def test_the_listing_shows_the_value_and_whether_it_is_the_default(self) -> None:
+        text = self.render(self.settings)
+
+        assert "firm_wait_seconds" in text
+        assert "900" in text
+        assert "(default)" in text
+        assert "es" in text
+
+    def test_a_setting_a_session_freezes_says_so(self) -> None:
+        assert "Not during a session." in self.render(self.settings)
+
+    def test_one_setting_prints_its_value_alone(self) -> None:
+        text = self.render({"settings": [self.settings["settings"][1]]})  # type: ignore[index]
+
+        assert text.strip().splitlines()[0].startswith("language")
+
+    def test_a_change_is_confirmed(self) -> None:
+        import argparse
+        import contextlib
+        import io
+
+        from anchor.cli.main import _render
+
+        out = io.StringIO()
+        args = argparse.Namespace(command="config", action="set")
+        with contextlib.redirect_stdout(out):
+            _render(args, {"key": "language", "value": "es"})
+
+        assert "language is now es" in out.getvalue()

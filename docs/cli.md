@@ -301,10 +301,53 @@ Anchor did, not part of what it is enforcing.
 Statistics older than the retention window are swept whenever a session ends.
 The window is 90 days unless `anchor.toml` says otherwise.
 
+### `anchor config get|set`
+
+The handful of settings Anchor keeps for you (SPEC 7.2, 13, 14). Everything
+else about behaviour belongs to a profile or a schedule, where it can differ
+by the day.
+
+```
+$ anchor config get
+firm_wait_seconds = 900  (default)
+    How long a Firm session makes you wait before it lets go. Not during a session.
+phrase_length = 150  (default)
+    How many characters the random phrase has. Not during a session.
+retention_days = 90  (default)
+    How long statistics are kept before they are forgotten.
+language =   (default)
+    The interface language. Empty follows the desktop.
+onboarding_done = False  (default)
+    Whether the first-run introduction has been completed.
+
+$ anchor config set firm_wait_seconds 1800
+firm_wait_seconds is now 1800.
+```
+
+`(default)` means nobody has chosen: the value shown is Anchor's own, and a
+later version may improve it. Choosing the same number pins it.
+
+Values are sent as text and judged by the engine, so `anchor config` and the
+Settings screen cannot disagree about what is allowed.
+
+The Firm wait and the phrase length are settled when a session starts and
+refuse to change until it ends — in either direction, because SPEC 7.2 says
+"never during a session", not "never looser":
+
+```
+$ anchor config set firm_wait_seconds 60
+anchor: firm_wait_seconds cannot be changed while a session is running. ...
+$ echo $?
+4
+```
+
+`retention_days` overrides the machine default in `anchor.toml`, so a choice
+made here is not quietly overruled by a file only root can edit.
+
 ### Planned
 
-`anchor category edit`, `anchor config` and `anchor doctor` are specified in
-SPEC 15 and arrive with Milestones 9 and 10.
+`anchor category edit` and `anchor doctor` are specified in SPEC 15 and
+arrive with Milestones 9 and 10.
 
 ## Exit codes
 
@@ -316,7 +359,7 @@ Stable. Scripts may rely on them.
 | 1 | The engine refused for a reason without its own code. |
 | 2 | The command line was wrong. |
 | 3 | No session is running. |
-| 4 | Refused on purpose: the ratchet, a Strict cancellation, the skip limit, the 8-hour cap. |
+| 4 | Refused on purpose: the ratchet, a Strict cancellation, the skip limit, the 8-hour cap, a setting a session has frozen. |
 | 5 | Not allowed to give the engine orders. |
 | 6 | The engine could not be reached. |
 | 7 | The price has not been paid yet: the wait is not over, or the phrase was wrong. |
@@ -330,7 +373,8 @@ Stable. Scripts may rely on them.
 `DURATION_TOO_LONG`, `INVALID_DURATION`, `CANCEL_FORBIDDEN`,
 `WAIT_NOT_ELAPSED`, `PHRASE_MISMATCH`, `VALVE_NOT_REQUESTED`,
 `SKIP_LIMIT_REACHED`, `SKIP_FORBIDDEN`, `UNKNOWN_PROFILE`, `UNKNOWN_SCHEDULE`,
-`INVALID_CONFIG`, `INTEGRITY_FAILURE`, `NOT_IMPLEMENTED`, `INTERNAL`.
+`INVALID_CONFIG`, `SETTING_LOCKED`, `INTEGRITY_FAILURE`, `NOT_IMPLEMENTED`,
+`INTERNAL`.
 
 ## Who may run these
 

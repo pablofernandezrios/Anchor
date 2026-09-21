@@ -38,6 +38,11 @@ class ErrorCode(StrEnum):
     UNKNOWN_SCHEDULE = "UNKNOWN_SCHEDULE"
     INVALID_CONFIG = "INVALID_CONFIG"
 
+    #: A setting SPEC 7.2 forbids changing while a session runs. Not a ratchet
+    #: violation: raising the Firm wait mid-session is refused too, and calling
+    #: that a loosening would be a lie.
+    SETTING_LOCKED = "SETTING_LOCKED"
+
     # Integrity and internals.
     INTEGRITY_FAILURE = "INTEGRITY_FAILURE"
     NOT_IMPLEMENTED = "NOT_IMPLEMENTED"

@@ -41,6 +41,7 @@ _EXIT_FOR_CODE: dict[str, int] = {
     ErrorCode.SKIP_FORBIDDEN: EXIT_REFUSED,
     ErrorCode.SKIP_LIMIT_REACHED: EXIT_REFUSED,
     ErrorCode.DURATION_TOO_LONG: EXIT_REFUSED,
+    ErrorCode.SETTING_LOCKED: EXIT_REFUSED,
     ErrorCode.UNAUTHORIZED: EXIT_UNAUTHORIZED,
     ErrorCode.WAIT_NOT_ELAPSED: EXIT_NOT_YET,
     ErrorCode.PHRASE_MISMATCH: EXIT_NOT_YET,
@@ -218,6 +219,14 @@ def build_parser() -> argparse.ArgumentParser:
     schedule_delete = schedule_actions.add_parser("delete", help="Remove a schedule.")
     schedule_delete.add_argument("id")
 
+    config = commands.add_parser("config", help="The settings Anchor keeps for you.")
+    config_actions = _Commands(config.add_subparsers(dest="action", required=True), common)
+    config_get = config_actions.add_parser("get", help="Show a setting, or all of them.")
+    config_get.add_argument("key", nargs="?", help="Which one. Omit it for all.")
+    config_set = config_actions.add_parser("set", help="Change a setting.")
+    config_set.add_argument("key")
+    config_set.add_argument("value")
+
     commands.add_parser("skip", help="Skip the scheduled session running now. Three a week.")
 
     stats = commands.add_parser("stats", help="What Anchor has been doing (SPEC 13).")
@@ -354,6 +363,14 @@ def _request_for(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
 
         case "break":
             return f"break.{args.action}", {}
+
+        case "config":
+            if args.action == "set":
+                # The value crosses as text. The engine owns what each setting
+                # may hold, and two clients that both parsed it would
+                # eventually disagree about what "15m" means.
+                return "config.set", {"key": args.key, "value": args.value}
+            return "config.get", ({"key": args.key} if args.key else {})
 
         case "skip":
             return "schedule.skip", {}
@@ -504,8 +521,24 @@ def _render(args: argparse.Namespace, result: dict[str, Any]) -> int:
     if args.command == "schedule":
         _render_schedules(args, result)
         return EXIT_OK
+    if args.command == "config":
+        _render_config(args, result)
+        return EXIT_OK
     _render_status(result)
     return EXIT_OK
+
+
+def _render_config(args: argparse.Namespace, result: dict[str, Any]) -> None:
+    """The settings, with their defaults marked (SPEC 15)."""
+    if args.action == "set":
+        print(f"{result['key']} is now {result['value']}.")
+        return
+
+    for entry in result.get("settings", []):
+        default = "  (default)" if entry["is_default"] else ""
+        print(f"{entry['key']} = {entry['value']}{default}")
+        frozen = "" if entry["during_session"] else " Not during a session."
+        print(f"    {entry['explain']}{frozen}")
 
 
 def _render_schedules(args: argparse.Namespace, result: dict[str, Any]) -> None:

@@ -28,6 +28,7 @@ from anchor.engine.breaks import postpone as postpone_break
 from anchor.engine.breaks import skip as skip_break
 from anchor.engine.categories import Category, load_categories, resolve
 from anchor.engine.paths import Paths, Settings
+from anchor.engine.preferences import PREFERENCES, Preferences, describe
 from anchor.engine.profiles import Profile
 from anchor.engine.ratchet import check_profile_change
 from anchor.engine.refusal import apply_refusal, remove_refusal
@@ -85,7 +86,13 @@ class Engine:
             systemd_runtime_dir if systemd_runtime_dir is not None else paths.systemd_runtime_dir
         )
         self.clock: Clock = clock or SystemClock()
-        self.policy = policy or SessionPolicy()
+        # The policy Anchor ships with, and the policy after the user's
+        # settings are applied over it. Keeping both means a preference that
+        # is set and then unset goes back to the default rather than to
+        # whatever it happened to be before (SPEC 7.2).
+        self._base_policy = policy or SessionPolicy()
+        self.policy = self._base_policy
+        self.preferences = Preferences()
         self.state = EngineState()
         self.profiles: dict[str, Profile] = {}
         self.categories: dict[str, Category] = {}
@@ -131,6 +138,8 @@ class Engine:
             name: Profile.from_dict(raw)
             for name, raw in (config.data.get("profiles") or {}).items()
         }
+        self.preferences = Preferences.from_dict(config.data.get("preferences") or {})
+        self._apply_preferences()
         self.schedules = {}
         for raw_schedule in config.data.get("schedules") or []:
             try:
@@ -185,7 +194,15 @@ class Engine:
                 "schedules": [
                     schedule.to_dict() for schedule in _by_start(self.schedules.values())
                 ],
+                "preferences": self.preferences.to_dict(),
             }
+        )
+
+    def _apply_preferences(self) -> None:
+        """Let the settings reach the parts of the engine they govern."""
+        self.policy = self.preferences.policy(self._base_policy)
+        self.stats.retention_days = self.preferences.retention(
+            installed=self.settings.retention_days
         )
 
     # -- the clock ------------------------------------------------------
@@ -374,6 +391,8 @@ class Engine:
             "schedule.edit": self._on_schedule_edit,
             "schedule.delete": self._on_schedule_delete,
             "schedule.skip": self._on_skip,
+            "config.get": self._on_config_get,
+            "config.set": self._on_config_set,
             "stats.query": self._on_stats_query,
             "stats.delete": self._on_stats_delete,
             "blocked.report": self._on_blocked_report,
@@ -759,6 +778,52 @@ class Engine:
         """
         self.stats.delete_everything()
         return request.ok({"deleted": True})
+
+    # -- settings ---------------------------------------------------------
+
+    def _on_config_get(self, request: Request) -> Response:
+        """One setting, or all of them (SPEC 15).
+
+        Always with the effective value and whether it is still the default,
+        because "15 minutes" and "15 minutes, because nobody has chosen" are
+        different things to show in a Settings screen.
+        """
+        described = describe(
+            self.preferences,
+            policy=self._base_policy,
+            installed_retention=self.settings.retention_days,
+        )
+        key = request.payload.get("key")
+        if key is None:
+            return request.ok({"settings": described})
+
+        for entry in described:
+            if entry["key"] == key:
+                return request.ok({"settings": [entry]})
+        known = ", ".join(sorted(PREFERENCES))
+        raise AnchorError(
+            f"there is no setting called {key!r}. Anchor knows: {known}",
+            code=ErrorCode.INVALID_CONFIG,
+        )
+
+    def _on_config_set(self, request: Request) -> Response:
+        """Change one setting, unless a session forbids it (SPEC 7.2)."""
+        key = str(request.payload["key"])
+        setting = PREFERENCES.get(key)
+        if setting is not None and not setting.during_session and self.state.session is not None:
+            raise AnchorError(
+                f"{key} cannot be changed while a session is running. "
+                "It decides how hard this session is to leave, "
+                "and that is settled when the session starts.",
+                code=ErrorCode.SETTING_LOCKED,
+            )
+
+        # An unknown key is refused here, by the same words the reader uses.
+        self.preferences = self.preferences.set(key, str(request.payload["value"]))
+        self._apply_preferences()
+        self.save_config()
+        self.emit("config.changed", {"what": "settings", "key": key})
+        return request.ok({"key": key, "value": self.preferences.get(key)})
 
     def _on_blocked_report(self, request: Request) -> Response:
         """Record an attempt the blocker refused (SPEC 8.3, 13)."""
