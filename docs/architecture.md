@@ -37,12 +37,13 @@ a change can be refused.
 ```
 src/anchor/
   protocol/    types, error codes, schema validation, message envelopes
-  engine/      paths, store, timekeeping, sessions, ratchet, profiles,
-               categories, phrases, state, core, service, main
+  engine/      paths, store, timekeeping, sessions, breaks, ratchet,
+               profiles, categories, phrases, state, core, service, main
   blocker/     journal, restore, constants, commands, dnswire, matcher,
                recent, attempts, resolver, rules, resolved, policies,
                apps, processes, watcher, enforcement, daemon, main
-  agent/       feed, indicator, notifications, desktop, main
+  agent/       feed, indicator, notifications, breakscreen, desktop,
+               overlay, main
   gui/         empty
   cli/         durations, client, main
 ```
@@ -350,6 +351,59 @@ to re-read a property called `Label`, which this interface does not have, and
 the label sits still for the whole session. The first run on a real desktop is
 what found it. Spike 4 could not: its label never moved.
 
+## Breaks
+
+A session alternates between working and resting, and the pattern belongs to
+the profile (SPEC 10, 12). The engine decides, as it decides everything about
+a session; the agent draws.
+
+**The phase has a clock of its own**, a `TimeAnchor` exactly like the
+session's. That is not tidiness. A break then inherits the reconciliation
+SPEC 6.2 already demands of sessions, so suspending the machine, rebooting it
+and moving the system clock behave the same way for a break as they do for the
+session containing it — and are tested the same way.
+
+**The timer does not care whether you are there.** SPEC 10 says the work timer
+keeps running during idle and suspend, and Anchor makes no attempt to detect a
+user at the keyboard: a timer that stopped when you stood up is a timer that
+never fires. What it does care about is an absence long enough to swallow a
+break. Then the break counts as taken and a fresh cycle starts, so eight hours
+asleep is one missed break rather than nine. That case publishes nothing: an
+overlay counting down a break that ended an hour ago is a lie with a clock on
+it.
+
+**Skipping and postponing** follow SPEC 10's table — Flexible both and freely,
+Moderate one five-minute postponement and no skipping, Mandatory neither. The
+limit counts postponements of the break now owed, not of the session, so
+taking a break forgives the last one. Postponing is not skipping: the break
+comes back when the borrowed time runs out.
+
+**A break does not unblock anything** unless the profile says so, and even
+then only sites. Applications stay blocked through every break, because five
+minutes is long enough to lose an hour in one.
+
+### The overlay
+
+[ADR 2](adr/0002-what-a-break-can-and-cannot-enforce.md) settled what a break
+can enforce on Wayland: a fullscreen window on every monitor is achievable and
+keeping the user inside it is not. So the overlay does not try. It covers
+every monitor, says what is happening, and if it loses focus it asks the
+compositor to present it again — at most every few seconds, because a
+compositor that refuses would otherwise be asked again on every focus change
+it causes, which is a loop with a user inside it.
+
+A monitor plugged in mid-break gets a window too, rather than becoming the one
+screen with the distraction on it.
+
+A Mandatory break says in words that it cannot be skipped or postponed. A
+screen with no way out and no explanation looks like a program that has hung,
+and the difference between friction and a crash is whether the user can tell
+which one they are looking at.
+
+What the overlay says is composed in `breakscreen.py` from the approved
+mockup, and tested where there is no display. `overlay.py` is GTK and nothing
+else.
+
 ## Anti-evasion
 
 Everything here is friction rather than a lock, as P2 requires, and each piece
@@ -381,6 +435,5 @@ mean blocking the web.
 
 ## Not built yet
 
-Breaks and the break overlay, schedules, statistics, the interface, and the
-packages. The milestones in the build plan cover them, and
+Schedules, statistics, the interface, and the packages. The milestones in the build plan cover them, and
 `docs/spikes/` records what was learned before building each one.
