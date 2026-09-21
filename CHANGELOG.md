@@ -36,5 +36,31 @@ this project follows [Semantic Versioning](https://semver.org/).
   live profile edits, ruptures recorded for a removed firewall table, and VPN
   and Tor blocking in Strict sessions (SPEC 5.3, 7.4, 7.6, 8.2).
 - `anchor profile list|show|create|edit|delete` (SPEC 15).
+- The graphical interface: GTK4 and libadwaita, the six screens the mockups
+  draw, Start Session with its confirmation, and the first-run introduction
+  that ends by blocking a sample domain and checking it really stopped
+  resolving (SPEC 14).
+- The top-bar menu, exported over `com.canonical.dbusmenu`, paying the debt
+  ADR 3 recorded. "Open Anchor" opens the interface (SPEC 14.1).
+- Spanish, through gettext, with `tools/po.py` to extract, compile and check
+  the catalogue without the GNU gettext tools (SPEC 14).
+- Settings the engine owns, with `anchor config get|set`. The Firm wait and
+  the phrase length refuse to change while a session runs, in either
+  direction (SPEC 7.2, 13, 15).
+- `anchor doctor`: five checks and what to type for each (SPEC 15).
+- `anchor category edit`, which saves your own copy of a category so package
+  updates cannot overwrite it (SPEC 12, 15).
+- Break patterns, types and hardness are editable through `profile.create`
+  and `profile.edit` (SPEC 12).
+- `tools/screenshot_gui.py`, which runs the interface against a real engine on
+  a virtual display and photographs every screen, and `tools/check_gui.py` for
+  the questions only a person at a real desktop can answer.
+
+### Fixed
+
+- The blocker now clears its own leftovers: a firewall table and browser
+  policies that outlived the daemon that applied them — after a SIGKILL, a
+  power cut or an upgrade mid-session — were left blocking a machine with no
+  session behind them until the next reboot (P4, SPEC 7.6).
 
 [Unreleased]: https://github.com/pablofernandezrios/anchor/commits/main

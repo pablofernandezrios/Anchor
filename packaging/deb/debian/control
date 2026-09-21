@@ -15,10 +15,13 @@ Depends: ${python3:Depends},
          nftables,
          systemd
 Recommends: gir1.2-gtk-4.0,
-            gir1.2-adw-1,
+            gir1.2-adw-1 (>= 1.5),
             python3-gi
 # python3-gi carries the indicator and the notifications as well as the
 # interface. Without it Anchor still blocks; it just says nothing.
+# libadwaita 1.5 is where Adw.Dialog and Adw.AlertDialog arrive, which the
+# Start Session screen and every confirmation are built from. Ubuntu 24.04
+# ships exactly 1.5, and every other target distribution ships more.
 Suggests: gnome-shell-extension-appindicator
 Description: Focus tool that blocks websites and applications
  Anchor blocks websites and applications during focus sessions, enforces

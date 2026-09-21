@@ -45,7 +45,7 @@ from anchor.gui import start as start_model
 from anchor.gui import stats as stats_model
 from anchor.gui.dialogs import OnboardingWindow, StartSessionDialog
 from anchor.gui.engine import EngineLink, Reply
-from anchor.gui.i18n import _
+from anchor.gui.i18n import N_, _
 from anchor.gui.pages import (
     HomePage,
     ListsPage,
@@ -66,20 +66,20 @@ APP_ID = "org.anchor.Anchor"
 #: takes the best one that this theme can actually draw, and the last name of
 #: each row is one every theme has.
 PAGES = (
-    ("home", "Home", ("user-home-symbolic", "go-home-symbolic")),
-    ("profiles", "Profiles", ("view-list-bullet-symbolic", "view-grid-symbolic")),
+    ("home", N_("Home"), ("user-home-symbolic", "go-home-symbolic")),
+    ("profiles", N_("Profiles"), ("view-list-bullet-symbolic", "view-grid-symbolic")),
     (
         "schedules",
-        "Schedules",
+        N_("Schedules"),
         ("x-office-calendar-symbolic", "alarm-symbolic", "document-open-recent-symbolic"),
     ),
-    ("lists", "Lists", ("view-list-symbolic",)),
+    ("lists", N_("Lists"), ("view-list-symbolic",)),
     (
         "stats",
-        "Statistics",
+        N_("Statistics"),
         ("x-office-spreadsheet-symbolic", "org.gnome.Settings-symbolic", "view-grid-symbolic"),
     ),
-    ("settings", "Settings", ("preferences-system-symbolic", "emblem-system-symbolic")),
+    ("settings", N_("Settings"), ("preferences-system-symbolic", "emblem-system-symbolic")),
 )
 
 

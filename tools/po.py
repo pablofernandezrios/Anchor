@@ -28,6 +28,7 @@ import sys
 from collections import OrderedDict
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Final
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src" / "anchor"
@@ -200,6 +201,20 @@ def read_po(path: Path) -> dict[str, str]:
 # -- writing a compiled catalogue ----------------------------------------
 
 
+#: The metadata entry, stored under the empty msgid. gettext reads the charset
+#: out of it before anything else, and a catalogue without it is decoded as
+#: ASCII — so a single "ó" raises UnicodeDecodeError and the whole language
+#: fails to load. It is written here rather than copied from the .po so that
+#: it cannot be got wrong.
+MO_HEADER: Final = (
+    "Project-Id-Version: anchor\n"
+    "MIME-Version: 1.0\n"
+    "Content-Type: text/plain; charset=UTF-8\n"
+    "Content-Transfer-Encoding: 8bit\n"
+    "Plural-Forms: nplurals=2; plural=(n != 1);\n"
+)
+
+
 def write_mo(entries: dict[str, str], path: Path) -> None:
     """Write the binary catalogue gettext reads.
 
@@ -208,8 +223,12 @@ def write_mo(entries: dict[str, str], path: Path) -> None:
     Python's ``gettext`` does not use it, so none is written.
     """
     translated = {key: value for key, value in sorted(entries.items()) if key and value}
-    keys = [key.encode("utf-8") for key in translated]
-    values = [translated[key].encode("utf-8") for key in translated]
+    translated[""] = MO_HEADER
+    # Sorted again: the tables must be in order of the keys, and the header
+    # has just been put in front of a list that was already sorted.
+    ordered = dict(sorted(translated.items()))
+    keys = [key.encode("utf-8") for key in ordered]
+    values = [ordered[key].encode("utf-8") for key in ordered]
 
     count = len(keys)
     start = 7 * 4

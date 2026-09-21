@@ -91,7 +91,7 @@ class HomePage(Page):
 
         heading = box(Gtk.Orientation.HORIZONTAL, spacing=8)
         heading.append(label(session.profile, css=("title-2",)))
-        heading.append(pill(session.level, session.level.lower()))
+        heading.append(pill(session.level, session.level_key))
         heading.append(label(session.started, css=("dim-label", "caption")))
         holder.append(heading)
 
@@ -142,7 +142,7 @@ class HomePage(Page):
         group = Adw.PreferencesGroup(title=_("Coming up"), description=view.skips)
         for line in view.schedules:
             row = Adw.ActionRow(title=line.name, subtitle=line.when)
-            row.add_suffix(pill(line.level, line.level.lower()))
+            row.add_suffix(pill(line.level, line.level_key))
             if line.now:
                 row.add_prefix(Gtk.Image(icon_name="media-playback-start-symbolic"))
             group.add(row)

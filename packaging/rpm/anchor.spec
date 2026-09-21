@@ -54,6 +54,14 @@ done
 install -Dpm 0644 data/applications/org.anchor.Anchor.desktop \
   %{buildroot}%{_datadir}/applications/org.anchor.Anchor.desktop
 
+# The interface's translations (SPEC 14), compiled without gettext's tools.
+python3 tools/po.py compile
+for catalogue in build/locale/*/LC_MESSAGES/anchor.mo; do
+  language="$(basename "$(dirname "$(dirname "$catalogue")")")"
+  install -Dpm 0644 "$catalogue" \
+    %{buildroot}%{_datadir}/locale/"$language"/LC_MESSAGES/anchor.mo
+done
+
 install -d %{buildroot}%{_sysconfdir}/anchor
 # Where the user's own categories go, replacing shipped ones by name (SPEC 12).
 install -d %{buildroot}%{_sysconfdir}/anchor/categories
@@ -99,6 +107,7 @@ fi
 %{_datadir}/anchor/tunnels.txt
 %{_datadir}/anchor/categories/*.toml
 %{_datadir}/applications/org.anchor.Anchor.desktop
+%{_datadir}/locale/*/LC_MESSAGES/anchor.mo
 %dir %{_sysconfdir}/anchor
 %dir %{_sysconfdir}/anchor/categories
 %dir %attr(0750,root,root) %{_sharedstatedir}/anchor

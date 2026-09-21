@@ -525,7 +525,111 @@ This is honestly lopsided: a VPN on its default port stops, and one carried
 over TCP 443 is indistinguishable from HTTPS and does not. Blocking 443 would
 mean blocking the web.
 
+## Settings
+
+Five things a person may change, and no more: the Firm wait, the length of the
+random phrase, how long statistics are kept, the interface's language, and
+whether the introduction has run (SPEC 7.2, 13, 14). Everything else about
+behaviour belongs to a profile or a schedule, where it can differ on a
+Tuesday.
+
+They live in `config.json` beside the profiles and schedules, and two rules
+shape them. **Unset is not zero**: a preference nobody has touched is stored
+as nothing at all and means "whatever Anchor's default is", so a better
+default in a later version reaches everyone who never opened Settings.
+**Values cross as text** and are judged by the engine, so `anchor config set`
+and the Settings screen cannot disagree about what is allowed.
+
+The two exit knobs refuse to change while a session runs — in *either*
+direction. SPEC 7.2 says "never during a session", not "never looser", so
+raising the phrase length mid-session is refused too. That is why the refusal
+is `SETTING_LOCKED` rather than `RATCHET_VIOLATION`: calling a stricter change
+a loosening would be a lie in a code that scripts branch on.
+
+`retention_days` overrides the machine default in `anchor.toml`, so a choice
+made in Settings is not quietly overruled by a file only root can edit.
+
+## anchor doctor
+
+Five checks and, for each, what to type (SPEC 15). The interesting part is
+that what counts as healthy depends on whether a session is running: Anchor
+loads its firewall table, points systemd-resolved at its resolver and writes
+the browser policies when a session starts, and undoes all of it when the
+session ends. A loaded table is therefore right during a session and **wrong**
+outside one — it means something stopped without cleaning up and the machine
+is being blocked by nobody.
+
+That turned out to be a real hole rather than a hypothetical, so the blocker
+now clears leftovers itself the first time it hears that no session is
+running. Once, not once a second.
+
+The indicator check is the one the engine cannot make: the panel lives on the
+user's session bus and the engine runs outside it. The engine answers "could
+not be checked" and whichever client asked looks for itself. Silence is
+reported as silence, never as absence.
+
+The blocker's liveness comes from its own policy poll, which is the only time
+it speaks to the engine at all — so no second channel, and nothing to ask
+systemd.
+
+## The interface
+
+`anchor-gui` is a thin client like every other: it holds no state the engine
+does not, it decides nothing, and closing it stops nothing.
+
+It is built in two halves, the same split the agent uses and for the same
+reason. `anchor/gui/home.py`, `start.py`, `profiles.py`, `schedules.py`,
+`lists.py`, `stats.py`, `settings.py` and `onboarding.py` decide what every
+screen *says* — the words, the numbers, which buttons exist, which are
+disabled and why — and are tested without a display. `app.py`, `pages.py`,
+`dialogs.py` and `widgets.py` turn those answers into GTK4 and libadwaita
+widgets and do nothing else.
+
+`EngineLink` reuses the agent's reconnecting feed for the status and sends
+everything else on a worker thread, because GTK has one thread and a socket
+that takes five seconds would freeze the window for five. A refusal from the
+engine is an answer, not an exception: it arrives as an ordinary `Reply` with
+the engine's own sentence, which becomes a toast. An unreachable engine is a
+different thing and says so, because a broken machine and a rule saying no
+are different screens.
+
+Three details worth keeping:
+
+- **Colours come from libadwaita**, never invented. `accent`, `warning` and
+  `error` already meet WCAG AA in both themes and follow the system's choice
+  of the two.
+- **Icons are asked for with a fallback.** A theme can carry a name and still
+  draw the "missing image" square; neither `has_icon` nor `get_file` tells the
+  truth about it, but what a lookup *resolved to* does, because GTK renames it
+  to `image-missing` when it gives up.
+- **Screens are rebuilt, not patched.** Widgets are cheap and half-updated
+  state is not: the indicator's own worst bug was a label that never changed.
+
+`tools/screenshot_gui.py` runs the whole thing against a real engine on a
+virtual display and photographs every screen. It is how the interface was
+checked against the mockups from a machine with no desktop, and it is what
+produced the pictures in the README.
+
+## Words
+
+English is the source and Spanish is the translation, through gettext (SPEC
+14). The catalogue lives in `po/`, and `tools/po.py` extracts, compiles and
+checks it without the GNU gettext tools — continuous integration installs
+Python and nothing else, and a check that only runs where a package happens to
+be installed is a check that stops running.
+
+Two things that catch real mistakes. A string looked up by index out of a
+tuple — weekdays, months, the names of the six pages — gives an extractor a
+variable rather than a string, so those are marked with `N_()` where they are
+written; without it they would silently never be translated. And a translation
+that loses a placeholder does not look wrong in an editor: it crashes when the
+sentence is formatted, in front of the one user who reads Spanish. A test
+compares the placeholders on both sides of every entry.
+
+Translated words are for reading, never for keys. A badge's colour is looked
+up by the level's own name, because in Spanish the label is "Firme".
+
 ## Not built yet
 
-The interface and the packages. The milestones in the build plan cover them, and
+The distribution packages. The milestones in the build plan cover them, and
 `docs/spikes/` records what was learned before building each one.

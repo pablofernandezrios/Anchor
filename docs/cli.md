@@ -203,8 +203,8 @@ The five shipped categories live in `/usr/share/anchor/categories` and are
 replaced whenever the package is updated. To change one, copy it to
 `/etc/anchor/categories/` and edit that: a file of the same name there replaces
 the shipped one entirely, and a file with a new name adds a category of your
-own. `anchor category edit` is not built yet; the files are plain TOML and are
-meant to be edited.
+own. `anchor category edit` writes that copy for you; the files are plain TOML
+either way and are meant to be edited by hand too.
 
 In an allowlist profile a category still blocks its applications, but its
 domains are ignored: adding them to the list of what is allowed would turn
@@ -385,9 +385,32 @@ The indicator check is the one the engine cannot make: the panel lives on the
 user's session bus and the engine runs outside it, so the engine answers
 "could not be checked" and whichever client asked looks for itself.
 
-### Planned
+#### `anchor category edit`
 
-`anchor category edit` is specified in SPEC 15 and arrives with Milestone 10.
+Change what a category covers (SPEC 12, 15). The edit is saved as *your* copy
+in `/etc/anchor/categories`, which replaces the shipped one by name — so
+package updates keep improving the lists you have not touched, and never
+overwrite the ones you have.
+
+```
+$ anchor category edit social --add-domain mastodon.social --remove-app discord.desktop
+Social media (social)
+  Domains: facebook.com, instagram.com, mastodon.social, ...
+  Apps: -
+
+Saved as your own copy. Package updates will not overwrite it.
+```
+
+While a session is blocking a category, entries can be added to it but not
+taken out (SPEC 7.4): otherwise a session could be unwound one entry at a
+time.
+
+```
+$ anchor category edit social --remove-domain x.com
+anchor: cannot take x.com out of 'Social media' while a session is blocking that category
+$ echo $?
+4
+```
 
 ## Exit codes
 

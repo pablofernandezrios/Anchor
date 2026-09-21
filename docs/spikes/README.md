@@ -369,6 +369,47 @@ switching away.
 top at least brings it back when asked (ADR 2's fourth promise), and the
 multi-monitor case, which needs a second screen.
 
+### The interface (Milestone 9)
+
+```sh
+python3 tools/screenshot_gui.py          # here, on a virtual display
+python3 tools/check_gui.py               # on the owner's desktop
+```
+
+GTK renders perfectly well onto a virtual display, so the interface did not
+have to be written blind. The first tool starts a real engine on a temporary
+tree, seeds it with what the mockups show, points the real interface at it and
+photographs every screen. Six things were found by looking at those pictures,
+and none of them by a test:
+
+- "in 49 min 56 s" where the mockup says "en 18 min". Nobody plans the next
+  hour to the second.
+- `discord.desktop` on a line that otherwise held websites.
+- "Coming up" listing Saturday above this afternoon, because it sorted by
+  clock time alone.
+- Four of six navigation icons drawing as a broken-image square.
+- The Start Session dialog crashing on its second draw, because emptying an
+  `Adw.PreferencesPage` by hand takes apart libadwaita's own widgets rather
+  than the groups you added.
+- The first-run window never registering with the application, and its title
+  bar reading "python3.12".
+
+**The icon finding is worth keeping.** `Gtk.IconTheme.has_icon` returns true
+for names that then draw as a broken square, and `get_file` returns nothing
+for icons that draw perfectly from the theme's cache. The honest test is what
+the lookup *resolved to*: GTK renames it to `image-missing` when it gave up.
+The interface now asks for the icon it wants with a fallback behind it.
+
+**Running it in Spanish found one more.** The level badge took its colour from
+its own label, which in Spanish is "Firme" — so every badge came out the
+default blue. Translated words are for reading, never for keys.
+
+**Still unverified:** everything that needs a real GNOME session — the
+indicator menu on a panel, keyboard navigation with a real focus ring, the
+system dark-mode switch, and whether the six icon names resolve on a full
+Adwaita theme rather than the cut-down one in a container. `tools/check_gui.py`
+asks exactly those.
+
 ---
 
 ## Running the rest

@@ -80,3 +80,34 @@ class TestTheRpmSpecIsShaped:
         assert any(
             "categories" in line for line in self.sections().get("%files", [])
         ), "the categories are installed but not packaged"
+
+
+@pytest.mark.parametrize("packaging", [DEB, RPM, ARCH], ids=lambda path: path.parent.name)
+class TestTheTranslationsAreInstalled:
+    """SPEC 14: Spanish is half the interface, and it is a build step."""
+
+    def text(self, packaging: Path) -> str:
+        extra = ""
+        if packaging is DEB:
+            extra = (DEB.parent / "rules").read_text(encoding="utf-8")
+        return packaging.read_text(encoding="utf-8") + extra
+
+    def test_the_catalogues_are_compiled(self, packaging: Path) -> None:
+        assert "tools/po.py compile" in self.text(packaging)
+
+    def test_and_land_where_gettext_looks(self, packaging: Path) -> None:
+        assert "LC_MESSAGES/anchor.mo" in self.text(packaging)
+
+
+class TestTheDesktopEntry:
+    """Without it, nothing in the menu starts the interface (SPEC 14, 17)."""
+
+    def test_it_names_the_program_that_exists(self) -> None:
+        entry = (ROOT / "data" / "applications" / "org.anchor.Anchor.desktop").read_text(
+            encoding="utf-8"
+        )
+        assert "Exec=anchor-gui" in entry
+
+    def test_the_program_is_an_entry_point(self) -> None:
+        pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        assert "anchor-gui = " in pyproject

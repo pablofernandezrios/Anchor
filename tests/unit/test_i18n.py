@@ -2,9 +2,26 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+import anchor.gui.i18n as i18n
 from anchor.gui.i18n import _, languages_for, setup
+
+
+@pytest.fixture(autouse=True)
+def _restore_the_translator() -> object:
+    """Put the language back after every test here.
+
+    ``setup`` installs a translator in a module global, which is what lets
+    every screen call ``_`` without being handed one. It also means a test
+    that switches to Spanish would leave every later test in Spanish, and the
+    interface's own tests assert on the English.
+    """
+    before = i18n._translate
+    yield
+    i18n._translate = before
 
 
 class TestChoosingALanguage:
@@ -45,11 +62,66 @@ class TestChoosingALanguage:
 
 
 class TestWithoutAnyTranslations:
-    def test_the_english_source_is_what_comes_out(self) -> None:
-        # A checkout with nothing compiled must still run, in English.
+    def test_the_english_source_is_what_comes_out(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A checkout with nothing compiled must still run, in English."""
+        monkeypatch.setattr(i18n, "_SEARCH", (tmp_path,))
         setup("es")
+
         assert _("Start session") == "Start session"
 
-    def test_setting_up_returns_the_same_translator(self) -> None:
+    def test_setting_up_returns_the_same_translator(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(i18n, "_SEARCH", (tmp_path,))
         translate = setup("")
+
         assert translate("Home") == _("Home")
+
+
+class TestWithTheSpanishCatalogue:
+    """The catalogue this repository ships, compiled and read back."""
+
+    def compiled(self, tmp_path: Path) -> Path:
+        import importlib.util
+        import sys
+
+        root = Path(__file__).resolve().parents[2]
+        spec = importlib.util.spec_from_file_location("anchor_po", root / "tools" / "po.py")
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        module.write_mo(
+            module.read_po(root / "po" / "es.po"),
+            tmp_path / "es" / "LC_MESSAGES" / "anchor.mo",
+        )
+        return tmp_path
+
+    def test_spanish_comes_out_when_spanish_is_asked_for(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(i18n, "_SEARCH", (self.compiled(tmp_path),))
+        setup("es")
+
+        assert _("Start session") == "Empezar sesión"
+
+    def test_and_english_when_english_is(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """There is no English catalogue: the source is the English."""
+        monkeypatch.setattr(i18n, "_SEARCH", (self.compiled(tmp_path),))
+        setup("en")
+
+        assert _("Start session") == "Start session"
+
+    def test_a_sentence_with_a_placeholder_still_formats(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The failure the catalogue test guards against, from the other end."""
+        monkeypatch.setattr(i18n, "_SEARCH", (self.compiled(tmp_path),))
+        setup("es")
+
+        assert _("Started at {time}").format(time="09:30") == "Empezó a las 09:30"

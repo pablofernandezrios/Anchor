@@ -48,6 +48,14 @@ package() {
   install -Dm644 data/categories/*.toml -t "$pkgdir/usr/share/anchor/categories/"
   install -Dm644 data/applications/*.desktop -t "$pkgdir/usr/share/applications/"
 
+  # The interface's translations (SPEC 14), compiled without gettext's tools.
+  python3 tools/po.py compile
+  for catalogue in build/locale/*/LC_MESSAGES/anchor.mo; do
+    language="$(basename "$(dirname "$(dirname "$catalogue")")")"
+    install -Dm644 "$catalogue" \
+      "$pkgdir/usr/share/locale/$language/LC_MESSAGES/anchor.mo"
+  done
+
   # Where the user's own categories go, replacing shipped ones by name (SPEC 12).
   install -dm755 "$pkgdir/etc/anchor/categories"
 

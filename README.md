@@ -6,10 +6,12 @@ during focus sessions, enforces breaks, and runs sessions on weekly schedules.
 A block cannot be undone in a moment of weakness: leaving early costs time and
 effort, and every escape is recorded.
 
-> **Status: 0.1.0, in development.** The engine core is implemented and tested.
-> Web blocking, application blocking, the GUI and the packages are not finished
-> yet. Do not expect a working install from this branch. See
-> [CHANGELOG.md](CHANGELOG.md) for what is done.
+> **Status: 0.1.0, in development.** The engine, the blocking, the breaks, the
+> schedules, the statistics and the interface are implemented and tested. The
+> distribution packages are not finished yet, so do not expect a working
+> install from this branch. See [CHANGELOG.md](CHANGELOG.md) for what is done.
+
+![The Home screen, with a session running](docs/screenshots/home.png)
 
 ## What it does
 
@@ -21,6 +23,18 @@ effort, and every escape is recorded.
 - **Enforces breaks** with a notification or a fullscreen countdown.
 - **Runs on a weekly schedule**, so focus time does not depend on willpower.
 - **Keeps local statistics** so you can see where your attention goes.
+
+## What it looks like
+
+| | |
+|---|---|
+| ![Starting a session](docs/screenshots/start-session.png) | ![The week of schedules](docs/screenshots/schedules.png) |
+| Starting a session: the profile's defaults, the 8-hour cap, and a confirmation that lists the consequences before anything is enforced. | Schedules, as a week. A window that crosses midnight is drawn as the two pieces it really is. |
+| ![Statistics](docs/screenshots/stats.png) | |
+| Statistics: day, week or month, kept locally and deletable in one action. | |
+
+The pictures are the real interface, drawn by
+[`tools/screenshot_gui.py`](tools/screenshot_gui.py) against a real engine.
 
 ## Levels
 

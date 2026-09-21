@@ -355,3 +355,16 @@ class TestWhatIsComingUp:
         home = home_view({"active": False}, schedules=listing, stats=stats(), today=0)
         assert home.schedules[0].name == "Work"
         assert home.schedules[0].when.startswith("Now")
+
+
+class TestWordsAreNotKeys:
+    """A translated label cannot be looked up as an identifier."""
+
+    def test_the_card_carries_the_level_s_own_name_as_well(self) -> None:
+        card = view().session
+        assert card is not None
+        assert (card.level, card.level_key) == ("Firm", "firm")
+
+    def test_so_does_each_coming_schedule(self) -> None:
+        lines = {line.name: line for line in view().schedules}
+        assert lines["Work"].level_key == "strict"

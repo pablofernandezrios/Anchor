@@ -172,6 +172,11 @@ def photograph(socket_path: Path, out: Path, *, dark: bool = False) -> int:
     from gi.repository import Adw, GLib, Gtk
 
     from anchor.gui.app import AnchorApplication
+    from anchor.gui.i18n import setup
+
+    # The same call `anchor-gui` makes before its first window: without it
+    # every screen is drawn in the source English, whatever the desktop says.
+    setup(os.environ.get("ANCHOR_LANGUAGE", ""))
 
     out.mkdir(parents=True, exist_ok=True)
     problems: list[str] = []

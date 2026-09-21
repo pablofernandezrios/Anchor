@@ -1,11 +1,16 @@
 #!/usr/bin/make -f
-# Skeleton. Milestone 9 completes the build.
 
 export PYBUILD_NAME=anchor
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
 %:
 	dh $@ --with python3 --buildsystem=pybuild
+
+override_dh_auto_build:
+	dh_auto_build
+	# The interface's translations (SPEC 14). No gettext tools are needed:
+	# tools/po.py writes the .mo files itself.
+	python3 tools/po.py compile
 
 override_dh_installsystemd:
 	dh_installsystemd --name=anchord

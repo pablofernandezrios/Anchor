@@ -3,6 +3,7 @@ packaging/systemd/anchor-blockerd.service lib/systemd/system/
 packaging/systemd/anchor-agent.service lib/systemd/user/
 data/categories/* usr/share/anchor/categories/
 data/applications/* usr/share/applications/
+build/locale/es/LC_MESSAGES/anchor.mo usr/share/locale/es/LC_MESSAGES/
 data/essentials.txt usr/share/anchor/
 data/doh-endpoints.txt usr/share/anchor/
 data/doh-domains.txt usr/share/anchor/

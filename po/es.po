@@ -10,6 +10,33 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n != 1);\\n"
 
 
+#: src/anchor/gui/app.py:69
+msgid "Home"
+msgstr "Inicio"
+
+#: src/anchor/gui/app.py:70
+msgid "Profiles"
+msgstr "Perfiles"
+
+#: src/anchor/gui/app.py:73
+#: src/anchor/gui/pages.py:332
+msgid "Schedules"
+msgstr "Horarios"
+
+#: src/anchor/gui/app.py:76
+msgid "Lists"
+msgstr "Listas"
+
+#: src/anchor/gui/app.py:79
+#: src/anchor/gui/settings.py:116
+msgid "Statistics"
+msgstr "Estadísticas"
+
+#: src/anchor/gui/app.py:82
+#: src/anchor/gui/pages.py:493
+msgid "Settings"
+msgstr "Ajustes"
+
 #: src/anchor/gui/app.py:316
 msgid "Creating schedules from here arrives with packaging."
 msgstr "Crear horarios desde aquí llega con el empaquetado."
@@ -573,10 +600,6 @@ msgstr "Tipo"
 msgid "Hardness"
 msgstr "Dureza"
 
-#: src/anchor/gui/pages.py:332
-msgid "Schedules"
-msgstr "Horarios"
-
 #: src/anchor/gui/pages.py:338
 msgid "New schedule"
 msgstr "Nuevo horario"
@@ -588,10 +611,6 @@ msgstr "Qué incluye"
 #: src/anchor/gui/pages.py:385
 msgid "Remove {entry}"
 msgstr "Quitar {entry}"
-
-#: src/anchor/gui/pages.py:493
-msgid "Settings"
-msgstr "Ajustes"
 
 #: src/anchor/gui/pages.py:500
 msgid "Show the introduction again"
@@ -757,10 +776,6 @@ msgstr "Esto decide lo difícil que es salir de la sesión en marcha, y eso qued
 #: src/anchor/gui/settings.py:114
 msgid "A session is running, so the two exit settings cannot change."
 msgstr "Hay una sesión en marcha, así que los dos ajustes de salida no se pueden cambiar."
-
-#: src/anchor/gui/settings.py:116
-msgid "Statistics"
-msgstr "Estadísticas"
 
 #: src/anchor/gui/settings.py:117
 #: src/anchor/gui/stats.py:132

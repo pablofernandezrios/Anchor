@@ -341,11 +341,11 @@ class TestTheIndicatorMenu:
         import anchor.agent.main as module
 
         original = module.open_the_interface
-        module.open_the_interface = lambda: opened.append(True)  # type: ignore[assignment]
+        module.open_the_interface = lambda: opened.append(True)
         try:
             agent.on_menu_action("open")
         finally:
-            module.open_the_interface = original  # type: ignore[assignment]
+            module.open_the_interface = original
 
         assert opened == [True]
 
@@ -357,11 +357,11 @@ class TestTheIndicatorMenu:
         import anchor.agent.main as module
 
         original = module.open_the_interface
-        module.open_the_interface = lambda: opened.append(True)  # type: ignore[assignment]
+        module.open_the_interface = lambda: opened.append(True)
         try:
             agent.on_menu_action("extend")
         finally:
-            module.open_the_interface = original  # type: ignore[assignment]
+            module.open_the_interface = original
 
         assert opened == [True]
 

@@ -72,6 +72,7 @@ class ScheduleLine:
     when: str
     name: str
     level: str
+    level_key: str = ""
     now: bool = False
 
 
@@ -81,6 +82,14 @@ class SessionCard:
 
     profile: str
     level: str
+    level_key: str
+    """The level as the engine names it, for anything that is not text.
+
+    The colour of a badge cannot be looked up by its label: in Spanish the
+    label is "Firme", and a lookup by label quietly returns the default for
+    every level at once. Translated words are for reading, never for keys.
+    """
+
     started: str
     countdown: str
     remaining: str
@@ -158,6 +167,7 @@ def _card(status: dict[str, Any], stats: dict[str, Any], apps: dict[str, str]) -
     return SessionCard(
         profile=str(status.get("profile", "")),
         level=_level_name(level),
+        level_key=level,
         started=_("Started at {time}").format(time=_clock(status.get("started_at"))),
         countdown=format_countdown(remaining),
         remaining=_("remaining · ends at {time}").format(time=_clock(status.get("ends_at"))),
@@ -374,6 +384,7 @@ def _upcoming(listing: dict[str, Any], *, today: int | None = None) -> tuple[Sch
                 when=_when(entry, weekday),
                 name=str(entry.get("name", "")),
                 level=_level_name(str(entry.get("level", Level.SOFT))),
+                level_key=str(entry.get("level", Level.SOFT)),
                 now=bool(entry.get("active")),
             )
         )
