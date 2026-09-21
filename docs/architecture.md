@@ -28,7 +28,7 @@ a change can be refused.
 |---|---|---|---|
 | Engine | `anchord` | root, system service | Implemented (Milestone 1) |
 | Blocker | `anchor-blockerd` | root, system service | Web blocking done (Milestone 2); applications in Milestone 4 |
-| Agent and indicator | `anchor-agent` | the owner, user service | Milestone 5. Speaks StatusNotifierItem over D-Bus, no AppIndicator library ([ADR 3](adr/0003-speak-statusnotifieritem-over-dbus.md)) |
+| Agent and indicator | `anchor-agent` | the owner, user service | Indicator and notifications done (Milestone 5); the break overlay is Milestone 6. Speaks StatusNotifierItem over D-Bus, no AppIndicator library ([ADR 3](adr/0003-speak-statusnotifieritem-over-dbus.md)) |
 | Interface | `anchor-gui` | the owner | Milestone 8 |
 | Command line | `anchor` | any allowed user | `status`, `start`, `extend`, `cancel`, `valve` |
 
@@ -42,7 +42,7 @@ src/anchor/
   blocker/     journal, restore, constants, commands, dnswire, matcher,
                recent, attempts, resolver, rules, resolved, policies,
                apps, processes, watcher, enforcement, daemon, main
-  agent/       empty
+  agent/       feed, indicator, notifications, desktop, main
   gui/         empty
   cli/         durations, client, main
 ```
@@ -294,6 +294,54 @@ blocked attempts by application as well as by domain) and publishes an event
 carrying whether the application was already running or had just been launched,
 so the agent can word the notification properly.
 
+## The agent
+
+The agent is the only part of Anchor the user sees all day, and the only one
+that is allowed to be absent. It blocks nothing, decides nothing and owns
+nothing: it follows the engine and draws what it is told. A machine with no
+desktop still blocks (P4); it just says nothing about it.
+
+**Staying attached.** The engine is a system service and the agent a user one,
+so they restart independently. The feed reconnects on its own and asks for the
+status each time rather than waiting for an event, because with no session
+running the engine sends nothing at all and an agent that learned only from
+events would show nothing for as long as nothing changed. An outage is logged
+once rather than once per attempt, and a connection that worked resets the
+backoff: otherwise the fifth package upgrade of a day would leave the
+indicator blank for half a minute.
+
+**What the top bar says.** Minutes, rounded up, as the approved mockup shows
+them: `2:14`, not `2:14:37`. Seconds in a panel are noise, and rounding down
+would leave the last minute reading `0:00` for a full sixty seconds. The item
+is hidden when no session runs, because an icon that sits there all day
+teaches people to ignore it — but it stays visible, saying the time is
+unknown, when the engine cannot be reached during a session. Disappearing
+would say "your session ended", and counting down from memory would invent the
+one number the indicator exists to be trusted for.
+
+**What it says out loud.** Three notifications, all of them specified: a
+blocked site (SPEC 8.3), the two-minute warning naming what will close
+(SPEC 7.1), and an application that was closed (SPEC 9). Nothing else. A focus
+tool that chats is a focus tool people turn off. The ten-minute limit is not
+reimplemented here: it lives in the blocker, which stops counting a domain it
+has already reported, and two ideas of what the user has seen would be one too
+many. The grace warning is the only critical one, and it expires exactly when
+the applications close.
+
+**The bus.** `desktop.py` is the only module that imports PyGObject, so
+everything above it is tested on machines with no desktop at all. It
+implements `org.kde.StatusNotifierItem` itself rather than using
+`libayatana-appindicator`, which is GTK3 and cannot share a process with the
+GTK4 interface ([ADR 3](adr/0003-speak-statusnotifieritem-over-dbus.md)). One
+item is exported for the life of the agent, its `Status` switching between
+`Active` and `Passive`: some panels forget an item that unregisters, and a bar
+that stayed empty until the next login would be worse than one extra property
+change. The watcher is watched rather than called once, because the extension
+can be disabled, enabled, or arrive after the agent.
+
+Drawing is handed to the desktop's own thread. The feed runs on its own, and
+D-Bus is not the place to find out what happens when two threads meet.
+
 ## Anti-evasion
 
 Everything here is friction rather than a lock, as P2 requires, and each piece
@@ -325,6 +373,6 @@ mean blocking the web.
 
 ## Not built yet
 
-Breaks, schedules, statistics, the agent and indicator, the interface, and
-the packages. The milestones in the build plan cover them, and
+Breaks and the break overlay, schedules, statistics, the interface, and the
+packages. The milestones in the build plan cover them, and
 `docs/spikes/` records what was learned before building each one.
