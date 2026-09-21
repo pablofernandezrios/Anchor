@@ -39,6 +39,11 @@ _SEARCH: Final = (
 #: The languages SPEC 14 asks for. Anything else follows the desktop.
 LANGUAGES: Final = ("en", "es")
 
+#: The locales that mean "no locale". A desktop set to these is not asking
+#: for a language, so passing them to gettext as one would be nonsense: it
+#: would look for a catalogue called "c" and, on the way, shadow nothing.
+_NOT_A_LANGUAGE: Final = frozenset({"c", "posix"})
+
 _translate: Callable[[str], str] = lambda text: text  # noqa: E731
 
 
@@ -71,7 +76,7 @@ def languages_for(preference: str) -> list[str]:
     for value in from_environment:
         for piece in value.split(":"):
             tag = piece.split(".")[0].split("_")[0].strip().lower()
-            if tag and tag not in wanted:
+            if tag and tag not in wanted and tag not in _NOT_A_LANGUAGE:
                 wanted.append(tag)
     return wanted
 

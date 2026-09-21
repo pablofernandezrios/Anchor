@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -24,40 +25,70 @@ def _restore_the_translator() -> object:
     i18n._translate = before
 
 
+#: Everything gettext reads a language out of. A test that sets one of these
+#: and leaves the rest alone is testing the machine it happens to run on:
+#: continuous integration sets LANG=C.UTF-8, this machine sets nothing, and
+#: the same assertion was true here and false there.
+ENVIRONMENT = ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG")
+
+
+@pytest.fixture
+def desktop(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
+    """Say what the desktop asks for, and nothing else."""
+
+    def say(**values: str) -> None:
+        for name in ENVIRONMENT:
+            monkeypatch.delenv(name, raising=False)
+        for name, value in values.items():
+            monkeypatch.setenv(name, value)
+
+    return say
+
+
 class TestChoosingALanguage:
-    def test_a_stored_preference_wins_over_the_desktop(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_a_stored_preference_wins_over_the_desktop(self, desktop: Callable[..., None]) -> None:
         # The case that matters: a Spanish desktop and a user who wants
         # Anchor in English. Following the desktop would overrule them.
-        monkeypatch.setenv("LANGUAGE", "es_ES.UTF-8")
+        desktop(LANGUAGE="es_ES.UTF-8")
         assert languages_for("en") == ["en"]
 
-    def test_nothing_stored_follows_the_desktop(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("LANGUAGE", "es_ES.UTF-8")
+    def test_nothing_stored_follows_the_desktop(self, desktop: Callable[..., None]) -> None:
+        desktop(LANGUAGE="es_ES.UTF-8")
         assert languages_for("") == ["es"]
 
     def test_a_list_of_desktop_languages_is_kept_in_order(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, desktop: Callable[..., None]
     ) -> None:
-        monkeypatch.setenv("LANGUAGE", "es:en_GB")
+        desktop(LANGUAGE="es:en_GB")
         assert languages_for("") == ["es", "en"]
 
     def test_a_language_anchor_does_not_speak_falls_through(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, desktop: Callable[..., None]
     ) -> None:
         """gettext then finds no catalogue and answers in the source English."""
-        monkeypatch.delenv("LANGUAGE", raising=False)
-        monkeypatch.delenv("LC_ALL", raising=False)
-        monkeypatch.delenv("LC_MESSAGES", raising=False)
-        monkeypatch.setenv("LANG", "fr_FR.UTF-8")
+        desktop(LANG="fr_FR.UTF-8")
         assert languages_for("") == ["fr"]
 
     def test_a_desktop_that_says_nothing_asks_for_nothing(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, desktop: Callable[..., None]
     ) -> None:
-        for name in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
-            monkeypatch.delenv(name, raising=False)
+        desktop()
+        assert languages_for("") == []
+
+    def test_the_c_locale_is_not_a_language(self, desktop: Callable[..., None]) -> None:
+        """`C` and `POSIX` mean "no locale", which is not something to ask for.
+
+        The machine that found this runs continuous integration with
+        LANG=C.UTF-8, where a Spanish desktop asked gettext for Spanish and
+        then for a language called "c".
+        """
+        desktop(LANGUAGE="es_ES.UTF-8", LANG="C.UTF-8")
+        assert languages_for("") == ["es"]
+
+    def test_and_a_machine_with_only_that_asks_for_nothing(
+        self, desktop: Callable[..., None]
+    ) -> None:
+        desktop(LANG="C.UTF-8", LC_ALL="POSIX")
         assert languages_for("") == []
 
 
