@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +31,14 @@ from anchor.engine.paths import Paths, Settings
 from anchor.engine.profiles import Profile
 from anchor.engine.ratchet import check_profile_change
 from anchor.engine.refusal import apply_refusal, remove_refusal
+from anchor.engine.schedules import (
+    Merged,
+    Schedule,
+    active_at,
+    merge,
+    parse_clock,
+    parse_day,
+)
 from anchor.engine.sessions import (
     GRACE_SECONDS,
     ExitKind,
@@ -39,7 +47,7 @@ from anchor.engine.sessions import (
     SessionPolicy,
     start_session,
 )
-from anchor.engine.state import EngineState
+from anchor.engine.state import SKIPS_PER_WEEK, EngineState
 from anchor.engine.stats import Statistics, summarise
 from anchor.engine.store import LoadStatus, SignedStore, load_or_create_key
 from anchor.engine.timekeeping import Clock, SystemClock, reconcile
@@ -81,6 +89,7 @@ class Engine:
         self.state = EngineState()
         self.profiles: dict[str, Profile] = {}
         self.categories: dict[str, Category] = {}
+        self.schedules: dict[str, Schedule] = {}
         self._sinks: list[EventSink] = []
 
         self.stats = Statistics(paths.stats_db, retention_days=settings.retention_days)
@@ -122,6 +131,16 @@ class Engine:
             name: Profile.from_dict(raw)
             for name, raw in (config.data.get("profiles") or {}).items()
         }
+        self.schedules = {}
+        for raw_schedule in config.data.get("schedules") or []:
+            try:
+                loaded = Schedule.from_dict(raw_schedule)
+            except (KeyError, ValueError, AnchorError) as error:
+                # One unreadable schedule must not cost the others, and must
+                # certainly not stop the engine from starting.
+                log.warning("a schedule could not be read and was skipped: %s", error)
+                continue
+            self.schedules[loaded.id] = loaded
 
         stored = self._state_store.load()
         if stored.status is LoadStatus.TAMPERED:
@@ -161,7 +180,12 @@ class Engine:
 
     def save_config(self) -> None:
         self._config_store.save(
-            {"profiles": {name: profile.to_dict() for name, profile in self.profiles.items()}}
+            {
+                "profiles": {name: profile.to_dict() for name, profile in self.profiles.items()},
+                "schedules": [
+                    schedule.to_dict() for schedule in _by_start(self.schedules.values())
+                ],
+            }
         )
 
     # -- the clock ------------------------------------------------------
@@ -174,6 +198,7 @@ class Engine:
         """
         session = self.state.session
         if session is None:
+            self._start_scheduled_session()
             return
 
         outcome = reconcile(session.anchor, self.clock)
@@ -189,11 +214,16 @@ class Engine:
 
         if outcome.expired:
             self._end_session(reason="completed")
+            self._start_scheduled_session()
             return
 
         self._advance_breaks(session)
         session = self.state.session
         if session is None:  # pragma: no cover - a break cannot end a session
+            return
+
+        if self._scheduled_window_closed(session):
+            self._end_session(reason="schedule_ended")
             return
 
         pending = session.exit_request
@@ -207,6 +237,100 @@ class Engine:
             if result.rupture is not None:
                 self._store_rupture(result.rupture)
             self._end_session(reason=str(pending.kind))
+
+    # -- schedules -------------------------------------------------------
+
+    def current_occurrences(self) -> list[Any]:
+        """The schedules covering this instant, minus the ones skipped."""
+        now = self.clock.wall()
+        self._forget_old_skips(now)
+        return [
+            occurrence
+            for occurrence in active_at(list(self.schedules.values()), now)
+            if self.state.skipped.get(occurrence.id) != occurrence.ends_at
+        ]
+
+    def merged_now(self) -> Merged | None:
+        return merge(self.current_occurrences(), self.profiles)
+
+    def _start_scheduled_session(self) -> None:
+        """Start the session a schedule asks for (SPEC 11).
+
+        A late boot joins the window in progress: the session starts now and
+        ends when the window does. Nothing is owed for the part that was
+        missed — a schedule is a promise about a time of day, not a quota of
+        hours.
+        """
+        if self.state.session is not None:
+            return
+        merged = self.merged_now()
+        if merged is None:
+            return
+
+        now = self.clock.wall()
+        remaining = merged.ends_at - now
+        if remaining <= 0:  # pragma: no cover - active_at would not have said so
+            return
+
+        session = start_session(
+            profile=merged.profile.name,
+            level=merged.level,
+            duration_seconds=remaining,
+            valve=merged.valve,
+            origin=SessionOrigin.SCHEDULE,
+            clock=self.clock,
+            policy=self.policy,
+        )
+        session = replace(session, schedule_ids=merged.schedule_ids)
+        session = session.with_breaks(BreakState.start(merged.profile.breaks, self.clock))
+
+        self.state.session = session
+        self.save()
+        self._match_refusal()
+        self.stats.session_started(
+            session_id=session.id,
+            profile=session.profile,
+            level=str(session.level),
+            origin=str(session.origin),
+            at=session.anchor.started_at,
+        )
+        self.emit("session.started", self.status())
+        log.info(
+            "schedule %s started session %s until %s",
+            ", ".join(merged.schedule_ids),
+            session.id,
+            merged.ends_at,
+        )
+
+    def _scheduled_window_closed(self, session: Session) -> bool:
+        """Whether a scheduled session's window has passed.
+
+        The session's own clock would end it anyway, since its duration is the
+        window. This catches the other way round: a schedule deleted or
+        disabled while it was running, which should stop blocking rather than
+        run to a deadline nobody asked for any more.
+        """
+        if session.origin is not SessionOrigin.SCHEDULE or not session.schedule_ids:
+            return False
+        return not self.current_occurrences()
+
+    def _forget_old_skips(self, now: float) -> None:
+        stale = [key for key, ends_at in self.state.skipped.items() if ends_at <= now]
+        for key in stale:
+            del self.state.skipped[key]
+
+    def _session_profile(self, session: Session) -> Profile | None:
+        """The rules a session is running under.
+
+        For a scheduled session this is worked out from the schedules rather
+        than read from a stored copy, so that one place decides what a
+        schedule blocks.
+        """
+        if session.origin is SessionOrigin.SCHEDULE and session.schedule_ids:
+            merged = self.merged_now()
+            if merged is not None:
+                return merged.profile
+        return self.profiles.get(session.profile)
 
     # -- requests -------------------------------------------------------
 
@@ -244,6 +368,12 @@ class Engine:
             "profile.delete": self._on_profile_delete,
             "policy.get": self._on_policy,
             "category.list": self._on_category_list,
+            "schedule.list": self._on_schedule_list,
+            "schedule.show": self._on_schedule_show,
+            "schedule.create": self._on_schedule_create,
+            "schedule.edit": self._on_schedule_edit,
+            "schedule.delete": self._on_schedule_delete,
+            "schedule.skip": self._on_skip,
             "stats.query": self._on_stats_query,
             "stats.delete": self._on_stats_delete,
             "blocked.report": self._on_blocked_report,
@@ -370,7 +500,7 @@ class Engine:
         if session is None:
             return request.ok({"active": False})
 
-        profile = self.profiles.get(session.profile)
+        profile = self._session_profile(session)
         if profile is None:
             # A session naming a profile that no longer exists still blocks.
             # Dropping to "nothing blocked" would turn a missing profile into
@@ -451,6 +581,162 @@ class Engine:
         return request.ok(
             {"categories": [category.to_dict() for category in _by_name(self.categories)]}
         )
+
+    def _on_skip(self, request: Request) -> Response:
+        """Skip the scheduled session that is running (SPEC 11).
+
+        Three a week, reset on Monday, and every one is a rupture. A Strict
+        scheduled session cannot be skipped at all: its valve is the only way
+        out, chosen when the schedule was written.
+        """
+        session = self._require_session()
+        if session.origin is not SessionOrigin.SCHEDULE:
+            raise AnchorError(
+                "this session was started by hand; skipping is for scheduled ones",
+                code=ErrorCode.SKIP_FORBIDDEN,
+            )
+        if session.level is Level.STRICT:
+            raise AnchorError(
+                "a Strict scheduled session cannot be skipped; only its valve applies",
+                code=ErrorCode.SKIP_FORBIDDEN,
+            )
+
+        self._reset_skips_if_new_week()
+        if self.state.skips_remaining <= 0:
+            raise AnchorError(
+                f"no skips left this week; they come back on Monday " f"({SKIPS_PER_WEEK} a week)",
+                code=ErrorCode.SKIP_LIMIT_REACHED,
+            )
+
+        # Remember the occurrence, or the next tick starts it again a second
+        # later, which is not what anyone means by skipping.
+        for occurrence in self.current_occurrences():
+            self.state.skipped[occurrence.id] = occurrence.ends_at
+
+        self.state.skips_used += 1
+        self._record_rupture(
+            RuptureKind.SKIP, f"the scheduled session {session.profile!r} was skipped"
+        )
+        self._end_session(reason="skipped")
+        return request.ok({"skipped": True, **self.status()})
+
+    def _reset_skips_if_new_week(self) -> None:
+        """Skips come back on Monday at 00:00 local time (SPEC 11)."""
+        today = datetime.fromtimestamp(self.clock.wall()).date()
+        monday = (today - timedelta(days=today.weekday())).isoformat()
+        if self.state.skips_week_start != monday:
+            self.state.skips_week_start = monday
+            self.state.skips_used = 0
+
+    def _on_schedule_list(self, request: Request) -> Response:
+        active = {occurrence.id for occurrence in self.current_occurrences()}
+        return request.ok(
+            {
+                "schedules": [
+                    {**schedule.to_dict(), "active": schedule.id in active}
+                    for schedule in _by_start(self.schedules.values())
+                ],
+                "skips_remaining": self.state.skips_remaining,
+            }
+        )
+
+    def _on_schedule_show(self, request: Request) -> Response:
+        schedule = self._find_schedule(str(request.payload["id"]))
+        active = {occurrence.id for occurrence in self.current_occurrences()}
+        return request.ok({"schedule": {**schedule.to_dict(), "active": schedule.id in active}})
+
+    def _on_schedule_create(self, request: Request) -> Response:
+        payload = request.payload
+        profile = str(payload["profile"])
+        if self.profiles and profile not in self.profiles:
+            raise AnchorError(
+                f"there is no profile called {profile!r}", code=ErrorCode.UNKNOWN_PROFILE
+            )
+
+        try:
+            schedule = Schedule.create(
+                name=str(payload["name"]),
+                profile=profile,
+                days=frozenset(parse_day(day) for day in payload["days"]),
+                start_minute=parse_clock(str(payload["start"])),
+                end_minute=parse_clock(str(payload["end"])),
+                level=Level(payload.get("level") or Level.SOFT),
+                valve=Valve(payload["valve"]) if payload.get("valve") else None,
+            )
+        except ValueError as error:
+            raise AnchorError(str(error), code=ErrorCode.BAD_REQUEST) from error
+
+        self.schedules[schedule.id] = schedule
+        self.save_config()
+        self.emit("config.changed", {"what": "schedules"})
+        return request.ok({"schedule": schedule.to_dict()})
+
+    def _on_schedule_edit(self, request: Request) -> Response:
+        """Change a schedule that is not running (SPEC 11).
+
+        Before it starts it can be edited freely; while it is running it
+        cannot, for the same reason a profile in use cannot be loosened. The
+        way out of a session is the session's own, not the schedule's.
+        """
+        payload = request.payload
+        schedule = self._find_schedule(str(payload["id"]))
+        self._refuse_if_running(schedule, "edited")
+
+        changes: dict[str, Any] = {}
+        if payload.get("name"):
+            changes["name"] = str(payload["name"])
+        if payload.get("profile"):
+            changes["profile"] = str(payload["profile"])
+        if payload.get("days"):
+            changes["days"] = frozenset(parse_day(day) for day in payload["days"])
+        if payload.get("start"):
+            changes["start_minute"] = parse_clock(str(payload["start"]))
+        if payload.get("end"):
+            changes["end_minute"] = parse_clock(str(payload["end"]))
+        if payload.get("level"):
+            changes["level"] = Level(payload["level"])
+        if payload.get("valve"):
+            changes["valve"] = Valve(payload["valve"])
+        if payload.get("enabled") is not None:
+            changes["enabled"] = bool(payload["enabled"])
+        if not changes:
+            raise AnchorError("nothing to change", code=ErrorCode.BAD_REQUEST)
+
+        try:
+            updated = replace(schedule, **changes)
+        except (ValueError, AnchorError) as error:
+            raise AnchorError(str(error), code=ErrorCode.BAD_REQUEST) from error
+
+        self.schedules[updated.id] = updated
+        self.save_config()
+        self.emit("config.changed", {"what": "schedules"})
+        return request.ok({"schedule": updated.to_dict()})
+
+    def _on_schedule_delete(self, request: Request) -> Response:
+        schedule = self._find_schedule(str(request.payload["id"]))
+        self._refuse_if_running(schedule, "deleted")
+
+        del self.schedules[schedule.id]
+        self.save_config()
+        self.emit("config.changed", {"what": "schedules"})
+        return request.ok({"deleted": schedule.id})
+
+    def _find_schedule(self, identifier: str) -> Schedule:
+        schedule = self.schedules.get(identifier)
+        if schedule is None:
+            raise AnchorError(
+                f"there is no schedule with the identifier {identifier!r}",
+                code=ErrorCode.UNKNOWN_SCHEDULE,
+            )
+        return schedule
+
+    def _refuse_if_running(self, schedule: Schedule, what: str) -> None:
+        if any(occurrence.id == schedule.id for occurrence in self.current_occurrences()):
+            raise AnchorError(
+                f"{schedule.name!r} is running now and cannot be {what}; "
+                "a schedule is changed before it starts, not during",
+                code=ErrorCode.RATCHET_VIOLATION,
+            )
 
     def _on_stats_query(self, request: Request) -> Response:
         """One range of statistics (SPEC 13).
@@ -557,7 +843,7 @@ class Engine:
         stops changing phase: there is no pattern to follow, and guessing one
         would interrupt the user on the strength of a guess.
         """
-        profile = self.profiles.get(session.profile)
+        profile = self._session_profile(session)
         if session.breaks is None or profile is None:
             return
 
@@ -635,7 +921,7 @@ class Engine:
                 "this session has no break pattern, because its profile is not installed",
                 code=ErrorCode.UNKNOWN_PROFILE,
             )
-        profile = self.profiles.get(session.profile)
+        profile = self._session_profile(session)
         if profile is None:
             raise AnchorError(
                 f"there is no profile called {session.profile!r}",
@@ -696,7 +982,7 @@ class Engine:
         if state is None:
             return None
 
-        profile = self.profiles.get(session.profile)
+        profile = self._session_profile(session)
         settings = profile.breaks if profile is not None else None
         return {
             "phase": str(state.phase),
@@ -892,3 +1178,8 @@ def _as_kwargs(session: Session) -> dict[str, Any]:
 
 def _by_name(categories: dict[str, Category]) -> list[Category]:
     return sorted(categories.values(), key=lambda category: (category.name.lower(), category.id))
+
+
+def _by_start(schedules: Any) -> list[Schedule]:
+    """Schedules in the order a person reads a week."""
+    return sorted(schedules, key=lambda item: (min(item.days), item.start_minute, item.name))

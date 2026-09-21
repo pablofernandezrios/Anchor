@@ -210,6 +210,51 @@ In an allowlist profile a category still blocks its applications, but its
 domains are ignored: adding them to the list of what is allowed would turn
 "block social media" into "social media is the only thing you may read".
 
+### `anchor schedule list|show|create|edit|delete`
+
+Sessions that start on their own (SPEC 11). A schedule is days of the week
+plus a window, and the profile, level and valve to run in it.
+
+```
+$ anchor schedule list
+3f2a91c4  Mornings         Mon Wed Fri    09:00–13:00  firm  ← running now
+8b1d0e77  Evenings         Tue Thu        18:00–20:00  soft
+
+Skips left this week: 3 of 3
+
+$ anchor schedule create Evenings --profile Work \
+      --day tuesday --day thursday --from 18:00 --to 20:00 --level soft
+```
+
+A window may cross midnight: `--from 22:00 --to 02:00` runs into the small
+hours of the next day, and belongs to the day it starts on.
+
+**A schedule can be edited and deleted freely until it starts.** While it is
+running, both are refused with exit code 4: a schedule is changed before it
+begins, not during. The way out of the session it started is the session's
+own.
+
+Where two schedules overlap, their rules are merged and the strictest level
+wins. The merge always resolves towards more blocking — the union of what they
+block, and an allowlist beating a blocklist — because a merge that could
+unblock something would make two schedules weaker than one.
+
+### `anchor skip`
+
+Skip the scheduled session running now (SPEC 11). Three a week, reset on
+Monday at 00:00, and every one is recorded as a rupture.
+
+```
+$ anchor skip
+$ anchor skip
+anchor: a Strict scheduled session cannot be skipped; only its valve applies
+$ echo $?
+4
+```
+
+A skip applies to that one occurrence. Tomorrow's run of the same schedule
+still happens.
+
 ### `anchor stats [--day|--week|--month]`
 
 What Anchor has been doing (SPEC 13). The week runs Monday to Sunday and the
@@ -258,9 +303,8 @@ The window is 90 days unless `anchor.toml` says otherwise.
 
 ### Planned
 
-`anchor skip`, `anchor category edit`, `anchor schedule`, `anchor config`
-and `anchor doctor` are specified in SPEC 15 and arrive with Milestones 8
-and 9.
+`anchor category edit`, `anchor config` and `anchor doctor` are specified in
+SPEC 15 and arrive with Milestones 9 and 10.
 
 ## Exit codes
 

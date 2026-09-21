@@ -181,6 +181,45 @@ def build_parser() -> argparse.ArgumentParser:
     category_show = category_actions.add_parser("show", help="Show what a category covers.")
     category_show.add_argument("name", help="The category's identifier, as `list` prints it.")
 
+    schedule = commands.add_parser("schedule", help="Sessions that start on their own.")
+    schedule_actions = _Commands(schedule.add_subparsers(dest="action", required=True), common)
+    schedule_actions.add_parser("list", help="List the schedules you have.")
+    schedule_show = schedule_actions.add_parser("show", help="Show one schedule.")
+    schedule_show.add_argument("id", help="Its identifier, as `list` prints it.")
+
+    schedule_create = schedule_actions.add_parser("create", help="Make a new schedule.")
+    schedule_create.add_argument("name")
+    schedule_create.add_argument("--profile", required=True)
+    schedule_create.add_argument(
+        "--day",
+        action="append",
+        required=True,
+        dest="days",
+        help="A weekday, by name. May be repeated.",
+    )
+    schedule_create.add_argument("--from", dest="start", required=True, help="For example 09:00.")
+    schedule_create.add_argument("--to", dest="end", required=True, help="For example 13:00.")
+    schedule_create.add_argument("--level", choices=("soft", "firm", "strict"))
+    schedule_create.add_argument("--valve", choices=("wait", "phrase", "both"))
+
+    schedule_edit = schedule_actions.add_parser(
+        "edit", help="Change a schedule. Not while it is running."
+    )
+    schedule_edit.add_argument("id")
+    schedule_edit.add_argument("--name")
+    schedule_edit.add_argument("--profile")
+    schedule_edit.add_argument("--day", action="append", dest="days")
+    schedule_edit.add_argument("--from", dest="start")
+    schedule_edit.add_argument("--to", dest="end")
+    schedule_edit.add_argument("--level", choices=("soft", "firm", "strict"))
+    schedule_edit.add_argument("--valve", choices=("wait", "phrase", "both"))
+    schedule_edit.add_argument("--enabled", action=argparse.BooleanOptionalAction, default=None)
+
+    schedule_delete = schedule_actions.add_parser("delete", help="Remove a schedule.")
+    schedule_delete.add_argument("id")
+
+    commands.add_parser("skip", help="Skip the scheduled session running now. Three a week.")
+
     stats = commands.add_parser("stats", help="What Anchor has been doing (SPEC 13).")
     stats.add_argument("--day", dest="range", action="store_const", const="day", help="Today.")
     stats.add_argument(
@@ -316,6 +355,12 @@ def _request_for(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
         case "break":
             return f"break.{args.action}", {}
 
+        case "skip":
+            return "schedule.skip", {}
+
+        case "schedule":
+            return _schedule_request(args)
+
         case "stats":
             if args.delete:
                 _confirm_deletion()
@@ -373,6 +418,45 @@ def _profile_request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
     raise ValueError(f"unknown profile action {args.action!r}")
 
 
+def _schedule_request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
+    match args.action:
+        case "list":
+            return "schedule.list", {}
+        case "show":
+            return "schedule.show", {"id": args.id}
+        case "delete":
+            return "schedule.delete", {"id": args.id}
+        case "create":
+            # Optional fields are left out rather than sent as null: the
+            # schema validates what is there, and "there but empty" is not
+            # the same as "not given".
+            payload: dict[str, Any] = {
+                "name": args.name,
+                "profile": args.profile,
+                "days": args.days,
+                "start": args.start,
+                "end": args.end,
+            }
+            if args.level:
+                payload["level"] = args.level
+            if args.valve:
+                payload["valve"] = args.valve
+            return "schedule.create", payload
+        case "edit":
+            changes: dict[str, Any] = {"id": args.id}
+            for option in ("name", "profile", "days", "start", "end", "level", "valve"):
+                value = getattr(args, option)
+                if value:
+                    changes[option] = value
+            if args.enabled is not None:
+                changes["enabled"] = args.enabled
+            if len(changes) == 1:
+                raise ValueError("nothing to change; pass at least one option")
+            return "schedule.edit", changes
+
+    raise ValueError(f"unknown schedule action {args.action!r}")
+
+
 def _confirm_deletion() -> None:
     """Ask before deleting a history that cannot be recovered (SPEC 13).
 
@@ -417,8 +501,43 @@ def _render(args: argparse.Namespace, result: dict[str, Any]) -> int:
     if args.command == "stats":
         _render_stats(result)
         return EXIT_OK
+    if args.command == "schedule":
+        _render_schedules(args, result)
+        return EXIT_OK
     _render_status(result)
     return EXIT_OK
+
+
+def _render_schedules(args: argparse.Namespace, result: dict[str, Any]) -> None:
+    """The week, as far as a terminal can draw it (SPEC 11, 15)."""
+    if result.get("deleted"):
+        print("Schedule removed.")
+        return
+
+    entries = result.get("schedules")
+    if entries is None:
+        one = result.get("schedule")
+        entries = [one] if one else []
+
+    if not entries:
+        print("No schedules yet.")
+        return
+
+    for entry in entries:
+        days = " ".join(_DAY_LETTERS[day] for day in entry["days"])
+        running = "  ← running now" if entry.get("active") else ""
+        print(
+            f"{entry['id'][:8]}  {entry['name']:<16} {days:<14} "
+            f"{entry['start']}–{entry['end']}  {entry['level']}"
+            f"{'' if entry.get('enabled', True) else '  (disabled)'}{running}"
+        )
+
+    if "skips_remaining" in result and args.action == "list":
+        print(f"\nSkips left this week: {result['skips_remaining']} of 3")
+
+
+#: Monday first, as the interface draws the week.
+_DAY_LETTERS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 
 def _render_stats(result: dict[str, Any]) -> None:

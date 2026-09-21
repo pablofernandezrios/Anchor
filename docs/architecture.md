@@ -37,9 +37,9 @@ a change can be refused.
 ```
 src/anchor/
   protocol/    types, error codes, schema validation, message envelopes
-  engine/      paths, store, timekeeping, sessions, breaks, ratchet,
-               profiles, categories, stats, phrases, state, core, service,
-               main
+  engine/      paths, store, timekeeping, sessions, breaks, schedules,
+               ratchet, profiles, categories, stats, phrases, state, core,
+               service, main
   blocker/     journal, restore, constants, commands, dnswire, matcher,
                recent, attempts, resolver, rules, resolved, policies,
                apps, processes, watcher, enforcement, daemon, main
@@ -450,6 +450,52 @@ is writing.
 from afterwards, by design: a private record that quietly survives its own
 deletion is not private.
 
+## Schedules
+
+A schedule is days of the week plus a window, and the profile, level and valve
+to run in it (SPEC 11). The engine evaluates them on its own tick rather than
+through systemd timers: a timer firing into a machine whose engine is still
+starting has nowhere to put the session, and the engine already reconciles
+time across boots and suspends.
+
+**A late boot joins the window in progress.** The session starts now and ends
+when the window does. Nothing is owed for the part that was missed — a
+schedule is a promise about a time of day, not a quota of hours.
+
+**A window may cross midnight.** `22:00`–`02:00` belongs to the day it starts
+on, and is still running at one in the morning.
+
+**A manual session holds the floor.** A schedule opening while one runs does
+not start a second session; it starts when the first ends, if the window is
+still open.
+
+**Overlaps merge, and the strictest level wins.** That is one line in the
+specification and several decisions here, all resolved towards *more*
+blocking, because a merge that could quietly unblock something would make two
+schedules weaker than one:
+
+- the level is the strictest, and the valve comes with it;
+- blocked domains, applications and categories are the union;
+- an allowlist beats a blocklist, since it blocks everything it does not name;
+  where two allowlists meet, only what **both** allow stays allowed, and
+  anything a blocklist in the same window names is taken out;
+- the session ends when the last of them ends;
+- everything else — the break pattern above all — comes from the strictest
+  schedule's profile.
+
+A scheduled session stores the schedule identifiers rather than a copy of the
+merged rules, so one place decides what a schedule blocks. That is safe
+because a schedule that is running cannot be edited or deleted: freely before
+it starts, as SPEC 11 says, and not during. The way out of the session it
+started is the session's own.
+
+**Skips** are three a week, reset on Monday at 00:00 local, and each one is a
+rupture (SPEC 11). A Strict scheduled session cannot be skipped at all: its
+valve, chosen when the schedule was written, is the only way out. The skipped
+occurrence is remembered until it would have ended, because otherwise the next
+tick would start it again a second later, which is not what anyone means by
+skipping.
+
 ## Anti-evasion
 
 Everything here is friction rather than a lock, as P2 requires, and each piece
@@ -481,5 +527,5 @@ mean blocking the web.
 
 ## Not built yet
 
-Schedules, the interface, and the packages. The milestones in the build plan cover them, and
+The interface and the packages. The milestones in the build plan cover them, and
 `docs/spikes/` records what was learned before building each one.

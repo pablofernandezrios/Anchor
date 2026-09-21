@@ -152,6 +152,14 @@ class Session:
     valve: Valve | None = None
     phase: SessionPhase = SessionPhase.WORKING
     exit_request: ExitRequest | None = None
+    schedule_ids: tuple[str, ...] = field(default_factory=tuple)
+    """The schedules this session is running for, if any (SPEC 11).
+
+    A scheduled session keeps the identifiers rather than a copy of the merged
+    rules, so that one place decides what a schedule blocks and there is no
+    second copy to fall out of step.
+    """
+
     breaks: BreakState | None = None
     """Where this session is in its work-and-rest pattern (SPEC 10).
 
@@ -300,6 +308,7 @@ class Session:
             "valve": str(self.valve) if self.valve else None,
             "phase": str(self.phase),
             "exit_request": self.exit_request.to_dict() if self.exit_request else None,
+            "schedule_ids": list(self.schedule_ids),
             "breaks": self.breaks.to_dict() if self.breaks else None,
             "blocked_attempts": self.blocked_attempts,
             "app_blocks": self.app_blocks,
@@ -318,6 +327,7 @@ class Session:
             valve=Valve(raw["valve"]) if raw.get("valve") else None,
             phase=SessionPhase(raw.get("phase", SessionPhase.WORKING)),
             exit_request=ExitRequest.from_dict(exit_raw) if exit_raw else None,
+            schedule_ids=tuple(str(item) for item in raw.get("schedule_ids", ())),
             breaks=BreakState.from_dict(raw["breaks"]) if raw.get("breaks") else None,
             blocked_attempts=int(raw.get("blocked_attempts", 0)),
             app_blocks=int(raw.get("app_blocks", 0)),

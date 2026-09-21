@@ -27,6 +27,14 @@ class EngineState:
     ruptures: list[dict[str, Any]] = field(default_factory=list)
     """Ruptures recorded since the last statistics flush."""
 
+    skipped: dict[str, float] = field(default_factory=dict)
+    """Schedule occurrences the user skipped, by identifier (SPEC 11).
+
+    The value is when that occurrence ends. Without this the next tick would
+    start the session again a second after it was skipped, which is not what
+    anyone means by skipping.
+    """
+
     @property
     def skips_remaining(self) -> int:
         return max(0, SKIPS_PER_WEEK - self.skips_used)
@@ -37,6 +45,7 @@ class EngineState:
             "skips_used": self.skips_used,
             "skips_week_start": self.skips_week_start,
             "ruptures": list(self.ruptures),
+            "skipped": dict(self.skipped),
         }
 
     @classmethod
@@ -47,4 +56,5 @@ class EngineState:
             skips_used=int(raw.get("skips_used", 0)),
             skips_week_start=str(raw.get("skips_week_start", "")),
             ruptures=list(raw.get("ruptures", [])),
+            skipped={str(key): float(value) for key, value in (raw.get("skipped") or {}).items()},
         )
