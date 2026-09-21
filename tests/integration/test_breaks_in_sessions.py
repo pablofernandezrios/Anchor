@@ -127,6 +127,20 @@ class TestWhatAClientCanSee:
         assert rest["phase"] == str(SessionPhase.WORKING)
         assert rest["remaining_seconds"] == pytest.approx(25 * MINUTE)
 
+    def test_it_also_knows_how_long_that_break_will_be(
+        self, client: EngineClient, clock: FakeClock
+    ) -> None:
+        """Home draws "10 min · fullscreen" for the break that is coming."""
+        start(client)
+
+        assert status(client)["break"]["break_seconds"] == 5 * MINUTE
+
+    def test_and_how_long_the_one_running_is(self, client: EngineClient, clock: FakeClock) -> None:
+        start(client)
+        clock.advance(25 * MINUTE)
+
+        assert status(client)["break"]["break_seconds"] == 5 * MINUTE
+
     def test_the_phase_changes_when_the_break_starts(
         self, client: EngineClient, clock: FakeClock
     ) -> None:

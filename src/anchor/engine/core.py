@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from anchor.engine.breaks import BreakState
+from anchor.engine.breaks import BreakState, break_seconds
 from anchor.engine.breaks import advance as advance_breaks
 from anchor.engine.breaks import postpone as postpone_break
 from anchor.engine.breaks import skip as skip_break
@@ -1083,6 +1083,14 @@ class Engine:
         return {
             "phase": str(state.phase),
             "remaining_seconds": state.remaining(self.clock),
+            # How long the break itself lasts, which is not the same as how
+            # long until it starts. Home draws "10 min · fullscreen" for the
+            # break that is coming (SPEC 14, mockup 1).
+            "break_seconds": (
+                break_seconds(state, settings, upcoming=state.phase is not SessionPhase.BREAK)
+                if settings
+                else None
+            ),
             "ends_at": state.ends_at,
             "long": state.long,
             "taken": state.taken,

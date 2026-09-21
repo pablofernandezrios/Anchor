@@ -138,9 +138,7 @@ def _unquote(text: str) -> str:
     body = text.strip()
     if body.startswith('"') and body.endswith('"'):
         body = body[1:-1]
-    return (
-        body.replace("\\n", "\n").replace('\\"', '"').replace("\\t", "\t").replace("\\\\", "\\")
-    )
+    return body.replace("\\n", "\n").replace('\\"', '"').replace("\\t", "\t").replace("\\\\", "\\")
 
 
 # -- reading a catalogue -------------------------------------------------

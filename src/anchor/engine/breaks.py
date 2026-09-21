@@ -299,6 +299,11 @@ def _is_long(state: BreakState, settings: BreakSettings) -> bool:
     return (state.cycles_done + 1) % every == 0
 
 
+def break_seconds(state: BreakState, settings: BreakSettings, *, upcoming: bool) -> int:
+    """How long the break in question lasts. Public for what clients draw."""
+    return _break_seconds(state, settings, upcoming=upcoming)
+
+
 def _break_seconds(state: BreakState, settings: BreakSettings, *, upcoming: bool) -> int:
     """How long the break in question lasts."""
     long = _is_long(state, settings) if upcoming else state.long
