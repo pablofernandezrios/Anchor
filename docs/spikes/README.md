@@ -294,6 +294,59 @@ installed on the VM. Their paths are documented rather than demonstrated.
 
 ---
 
+## The desktop checks, and what they found
+
+The Milestone 0 spikes answered questions about the system before the code
+existed. `tools/` holds their successors: checks that run the real code on a
+real desktop, because some of it cannot be run anywhere else. This machine has
+no Snap, no Flatpak, no panel and no session bus, so what is written here is
+what the owner's VM answered.
+
+### Application blocking (Milestone 4)
+
+```sh
+python3 tools/check_app_blocking.py --list
+python3 tools/check_app_blocking.py --app org.gnome.Calculator.desktop
+```
+
+Run against GNOME Calculator on Ubuntu 26.04, Wayland: recognised by
+executable, left alone for the whole grace period, closed by `SIGTERM` alone,
+and — relaunched — closed **0.02 s** after Anchor saw it, with no window ever
+appearing. The kernel reported six `exec` calls during that one launch, so the
+netlink path is doing real work rather than the poll quietly carrying it.
+
+**Still unverified:** a Snap and a Flatpak. Both are matched by cgroup rather
+than by executable, which is a different code path from the one this exercised.
+
+### The indicator and the notifications (Milestone 5)
+
+```sh
+python3 tools/check_agent.py
+```
+
+**It found a real bug**, which is what it was for. The item reached the top bar
+and showed `2:14`, and then sat there: every minute the agent emitted
+`NewLabel`, and nothing moved. GNOME's extension turns a signal name into a
+property name by removing its prefix, so `NewLabel` asks it to re-read a
+property called `Label`, which the interface does not have. The property is
+`XAyatanaLabel`, so the signal is `XAyatanaNewLabel`.
+
+Spike 4 could not have caught this. It registered a **static** label and looked
+at it for six seconds; nothing about a label that never changes exercises the
+signal that changes it. The lesson is the one the `.invalid` probe taught in
+Milestone 0, in a new costume: a check that does not make the thing *change* is
+not checking the thing.
+
+The fix moved the choice of signals out of the D-Bus layer into a plain
+function, so the case that was wrong is now pinned by a test on a machine with
+no bus at all. Re-run on the VM: the countdown moves.
+
+The same run confirmed the rest of SPEC 14.1 as drawn: the icon appears, the
+time appears **beside** it, the three notifications arrive and read properly,
+and the item leaves the bar when the session ends.
+
+---
+
 ## Running the rest
 
 Four machine-level spikes, unattended:

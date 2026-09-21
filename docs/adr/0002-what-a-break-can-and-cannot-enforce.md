@@ -67,8 +67,9 @@ Rejected, and why:
 - The README limitations section says plainly that breaks are enforced by
   insistence rather than by force, in the same spirit as "friction, not
   guarantees" (P2).
-- Milestone 5 implements the pre-break warning, the alert, and the re-present
-  behaviour, with the lead time configurable per profile.
+- The pre-break warning, the alert and the re-present behaviour are built
+  with the breaks themselves, in Milestone 6, with the lead time
+  configurable per profile.
 - Statistics still record breaks taken, postponed and skipped (SPEC 13). A
   break the user walked away from counts as taken, which matches the rule in
   SPEC 10 for an absence covering a break.
