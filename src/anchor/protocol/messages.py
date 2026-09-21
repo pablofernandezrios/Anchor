@@ -26,7 +26,14 @@ from typing import Any, Final, Self
 
 from anchor.protocol.errors import ErrorCode, ProtocolError
 from anchor.protocol.schema import EMPTY, Field, Schema
-from anchor.protocol.types import Level, SessionOrigin, Valve, WebMode
+from anchor.protocol.types import (
+    BreakHardness,
+    BreakType,
+    Level,
+    SessionOrigin,
+    Valve,
+    WebMode,
+)
 
 PROTOCOL_VERSION: Final = 1
 
@@ -41,6 +48,24 @@ _LEVELS: Final = tuple(str(level) for level in Level)
 _VALVES: Final = tuple(str(valve) for valve in Valve)
 _ORIGINS: Final = tuple(str(origin) for origin in SessionOrigin)
 _WEB_MODES: Final = tuple(str(mode) for mode in WebMode)
+_BREAK_TYPES: Final = tuple(str(kind) for kind in BreakType)
+_HARDNESSES: Final = tuple(str(hardness) for hardness in BreakHardness)
+
+
+#: The break settings a profile carries (SPEC 12). Every key is optional: an
+#: edit names only what changes, like the rest of ``profile.edit``.
+BREAKS_SCHEMA: Final = Schema(
+    work_minutes=Field(int, required=False, default=None, minimum=1, maximum=24 * 60),
+    break_minutes=Field(int, required=False, default=None, minimum=1, maximum=24 * 60),
+    type=Field(str, required=False, default=None, choices=_BREAK_TYPES),
+    hardness=Field(str, required=False, default=None, choices=_HARDNESSES),
+    # Zero turns the long break off, which is the only way to say "no longer
+    # wanted" in a payload where absent already means "leave it alone".
+    long_break_every=Field(int, required=False, default=None, minimum=0, maximum=100),
+    long_break_minutes=Field(int, required=False, default=None, minimum=1, maximum=24 * 60),
+    allow_sites_during_breaks=Field(bool, required=False, default=None),
+    warning_seconds=Field(int, required=False, default=None, minimum=0, maximum=3600),
+)
 
 
 REQUEST_SCHEMAS: Final[dict[str, Schema]] = {
@@ -99,6 +124,7 @@ REQUEST_SCHEMAS: Final[dict[str, Schema]] = {
         domains=Field(list, required=False, default=None, item_kind=str),
         apps=Field(list, required=False, default=None, item_kind=str),
         categories=Field(list, required=False, default=None, item_kind=str),
+        breaks=Field(dict, required=False, default=None, nested=BREAKS_SCHEMA),
     ),
     # Edits name what to add and what to take away rather than replacing the
     # whole profile. That is how a person thinks about a list, and it is what
@@ -113,11 +139,22 @@ REQUEST_SCHEMAS: Final[dict[str, Schema]] = {
         add_categories=Field(list, required=False, default=None, item_kind=str),
         remove_categories=Field(list, required=False, default=None, item_kind=str),
         block_vpn_and_tor=Field(bool, required=False, default=None),
+        breaks=Field(dict, required=False, default=None, nested=BREAKS_SCHEMA),
     ),
     "profile.delete": Schema(name=Field(str)),
     # Spoken by anchor-blockerd rather than by a person.
     "policy.get": EMPTY,
     "category.list": EMPTY,
+    # Like profile.edit, an edit names what to add and what to take away: that
+    # is what the ratchet judges, and what a person means by editing a list.
+    "category.edit": Schema(
+        id=Field(str),
+        name=Field(str, required=False, default=None),
+        add_domains=Field(list, required=False, default=None, item_kind=str),
+        remove_domains=Field(list, required=False, default=None, item_kind=str),
+        add_apps=Field(list, required=False, default=None, item_kind=str),
+        remove_apps=Field(list, required=False, default=None, item_kind=str),
+    ),
     "blocked.report": Schema(domain=Field(str), rule=Field(str)),
     "apps.report": Schema(
         kind=Field(str, choices=("grace", "closed", "launch")),

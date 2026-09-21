@@ -183,6 +183,20 @@ def build_parser() -> argparse.ArgumentParser:
     category_show = category_actions.add_parser("show", help="Show what a category covers.")
     category_show.add_argument("name", help="The category's identifier, as `list` prints it.")
 
+    category_edit = category_actions.add_parser(
+        "edit", help="Change what a category covers. Writes your own copy."
+    )
+    category_edit.add_argument("name", help="The category's identifier.")
+    category_edit.add_argument(
+        "--add-domain", action="append", dest="add_domains", metavar="DOMAIN"
+    )
+    category_edit.add_argument(
+        "--remove-domain", action="append", dest="remove_domains", metavar="DOMAIN"
+    )
+    category_edit.add_argument("--add-app", action="append", dest="add_apps", metavar="APP")
+    category_edit.add_argument("--remove-app", action="append", dest="remove_apps", metavar="APP")
+    category_edit.add_argument("--rename", dest="rename", help="A new display name.")
+
     schedule = commands.add_parser("schedule", help="Sessions that start on their own.")
     schedule_actions = _Commands(schedule.add_subparsers(dest="action", required=True), common)
     schedule_actions.add_parser("list", help="List the schedules you have.")
@@ -360,8 +374,18 @@ def _request_for(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
             return _profile_request(args)
 
         case "category":
-            # One request for both actions: the list is small, and asking the
-            # engine to filter it would be a request that adds nothing.
+            if args.action == "edit":
+                changes: dict[str, Any] = {"id": args.name}
+                for key in ("add_domains", "remove_domains", "add_apps", "remove_apps"):
+                    if getattr(args, key):
+                        changes[key] = getattr(args, key)
+                if args.rename:
+                    changes["name"] = args.rename
+                if len(changes) == 1:
+                    raise ValueError("say what to change: --add-domain, --remove-app, --rename…")
+                return "category.edit", changes
+            # One request for both of the others: the list is small, and asking
+            # the engine to filter it would be a request that adds nothing.
             return "category.list", {}
 
         case "break":
@@ -653,6 +677,15 @@ def _render_stats(result: dict[str, Any]) -> None:
 
 
 def _render_category(args: argparse.Namespace, result: dict[str, Any]) -> int:
+    if args.action == "edit":
+        edited = result.get("category") or {}
+        print(f"{edited.get('name', args.name)} ({edited.get('id', args.name)})")
+        for label, key in (("Domains", "domains"), ("Apps", "apps")):
+            values = edited.get(key) or []
+            print(f"  {label}: {', '.join(values) if values else '-'}")
+        print("\nSaved as your own copy. Package updates will not overwrite it.")
+        return EXIT_OK
+
     categories = result.get("categories") or []
     if args.action == "list":
         if not categories:

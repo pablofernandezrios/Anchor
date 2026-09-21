@@ -26,11 +26,11 @@ from anchor.engine.breaks import BreakState, break_seconds
 from anchor.engine.breaks import advance as advance_breaks
 from anchor.engine.breaks import postpone as postpone_break
 from anchor.engine.breaks import skip as skip_break
-from anchor.engine.categories import Category, load_categories, resolve
+from anchor.engine.categories import Category, load_categories, resolve, write_category
 from anchor.engine.doctor import Observer, examine, gather, worst
 from anchor.engine.paths import Paths, Settings
 from anchor.engine.preferences import PREFERENCES, Preferences, describe
-from anchor.engine.profiles import Profile
+from anchor.engine.profiles import BreakSettings, Profile
 from anchor.engine.ratchet import check_profile_change
 from anchor.engine.refusal import apply_refusal, remove_refusal
 from anchor.engine.schedules import (
@@ -56,6 +56,8 @@ from anchor.engine.timekeeping import Clock, SystemClock, reconcile
 from anchor.protocol.errors import AnchorError, ErrorCode, RatchetViolationError
 from anchor.protocol.messages import Event, Request, Response
 from anchor.protocol.types import (
+    BreakHardness,
+    BreakType,
     Level,
     RuptureKind,
     SessionOrigin,
@@ -390,6 +392,7 @@ class Engine:
             "profile.delete": self._on_profile_delete,
             "policy.get": self._on_policy,
             "category.list": self._on_category_list,
+            "category.edit": self._on_category_edit,
             "schedule.list": self._on_schedule_list,
             "schedule.show": self._on_schedule_show,
             "schedule.create": self._on_schedule_create,
@@ -450,6 +453,7 @@ class Engine:
                 domains=frozenset(payload.get("domains") or ()),
                 apps=frozenset(payload.get("apps") or ()),
                 categories=frozenset(payload.get("categories") or ()),
+                breaks=_breaks_with(BreakSettings(), payload.get("breaks")),
             )
         except ValueError as error:
             raise AnchorError(str(error), code=ErrorCode.INVALID_CONFIG) from error
@@ -487,6 +491,7 @@ class Engine:
                 if payload.get("block_vpn_and_tor") is None
                 else bool(payload["block_vpn_and_tor"])
             ),
+            breaks=_breaks_with(current.breaks, payload.get("breaks")),
         )
 
         # Checked before anything is written, so a refused edit leaves the
@@ -609,6 +614,71 @@ class Engine:
         return request.ok(
             {"categories": [category.to_dict() for category in _by_name(self.categories)]}
         )
+
+    def _on_category_edit(self, request: Request) -> Response:
+        """Change what a category covers (SPEC 12, 15).
+
+        The user's copy replaces the shipped one by name, so an edit writes a
+        whole file into /etc rather than patching the package's. Package
+        updates then leave it alone, which is the half of SPEC 12 that a
+        single directory could not give.
+        """
+        payload = request.payload
+        identifier = str(payload["id"])
+        current = self.categories.get(identifier)
+        if current is None:
+            known = ", ".join(sorted(self.categories))
+            raise AnchorError(
+                f"there is no category called {identifier!r}. This machine has: {known}",
+                code=ErrorCode.INVALID_CONFIG,
+            )
+
+        removals = set(payload.get("remove_domains") or ()) | set(payload.get("remove_apps") or ())
+        if removals and self._category_in_use(identifier):
+            # SPEC 7.4: only stricter changes during a session. Taking an
+            # entry out of a category a running session enables would unblock
+            # it, which is exactly what the ratchet exists to refuse.
+            raise RatchetViolationError(
+                f"cannot take {', '.join(sorted(removals))} out of {current.name!r} "
+                "while a session is blocking that category"
+            )
+
+        updated = replace(
+            current,
+            name=str(payload["name"]) if payload.get("name") else current.name,
+            custom=True,
+            domains=frozenset(
+                (
+                    current.domains
+                    | {str(one).strip().lower() for one in payload.get("add_domains") or ()}
+                )
+                - {str(one).strip().lower() for one in payload.get("remove_domains") or ()}
+            ),
+            apps=frozenset(
+                (current.apps | {str(one).strip() for one in payload.get("add_apps") or ()})
+                - {str(one).strip() for one in payload.get("remove_apps") or ()}
+            ),
+        )
+
+        try:
+            write_category(updated, self.paths.user_categories)
+        except OSError as error:
+            raise AnchorError(
+                f"could not save the category: {error}", code=ErrorCode.INVALID_CONFIG
+            ) from error
+
+        self.categories[identifier] = updated
+        self.emit("config.changed", {"what": "categories", "id": identifier})
+        return request.ok({"category": updated.to_dict()})
+
+    def _category_in_use(self, identifier: str) -> bool:
+        """Whether a running session is blocking this category."""
+        self.tick()
+        session = self.state.session
+        if session is None:
+            return False
+        profile = self._session_profile(session)
+        return profile is not None and identifier in profile.categories
 
     def _on_skip(self, request: Request) -> Response:
         """Skip the scheduled session that is running (SPEC 11).
@@ -1278,6 +1348,38 @@ def _as_kwargs(session: Session) -> dict[str, Any]:
         "blocked_attempts": session.blocked_attempts,
         "ruptures": session.ruptures,
     }
+
+
+def _breaks_with(current: BreakSettings, changes: dict[str, Any] | None) -> BreakSettings:
+    """Apply the break keys an edit named, leaving the rest alone (SPEC 12).
+
+    ``None`` means "not mentioned", the way every other optional field in
+    ``profile.edit`` works. The one value that cannot be said that way is
+    "stop taking long breaks", so ``long_break_every`` of zero says it.
+    """
+    if not changes:
+        return current
+
+    wanted: dict[str, Any] = {}
+    for key in ("work_minutes", "break_minutes", "long_break_minutes", "warning_seconds"):
+        if changes.get(key) is not None:
+            wanted[key] = int(changes[key])
+    if changes.get("type") is not None:
+        wanted["type"] = BreakType(changes["type"])
+    if changes.get("hardness") is not None:
+        wanted["hardness"] = BreakHardness(changes["hardness"])
+    if changes.get("allow_sites_during_breaks") is not None:
+        wanted["allow_sites_during_breaks"] = bool(changes["allow_sites_during_breaks"])
+    if changes.get("long_break_every") is not None:
+        every = int(changes["long_break_every"])
+        wanted["long_break_every"] = every or None
+        if not every:
+            wanted["long_break_minutes"] = None
+
+    try:
+        return replace(current, **wanted)
+    except ValueError as error:
+        raise AnchorError(str(error), code=ErrorCode.INVALID_CONFIG) from error
 
 
 def _by_name(categories: dict[str, Category]) -> list[Category]:

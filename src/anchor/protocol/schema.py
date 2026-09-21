@@ -36,6 +36,12 @@ class Field:
     maximum: int | None = None
     item_kind: type | None = None
     convert: Callable[[Any], Any] | None = None
+    nested: Schema | None = None
+    """For an object field, the schema its own keys must satisfy.
+
+    Without it a nested object would be the one place a typo passes silently,
+    which is exactly what SPEC 5.2 asks the validator to prevent.
+    """
 
     def _describe(self) -> str:
         return _TYPE_NAMES.get(self.kind, self.kind.__name__)
@@ -71,6 +77,9 @@ class Field:
                 if not isinstance(item, self.item_kind):
                     expected = _TYPE_NAMES.get(self.item_kind, self.item_kind.__name__)
                     raise ProtocolError(f"item {index} of field {name!r} must be {expected}")
+
+        if self.kind is dict and self.nested is not None:
+            value = self.nested.validate(value, context=f"field {name!r}")
 
         if self.convert is not None:
             try:

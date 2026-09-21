@@ -43,16 +43,25 @@ class Category:
     domains: frozenset[str] = frozenset()
     apps: frozenset[str] = frozenset()
 
+    custom: bool = False
+    """Whether this is the user's own copy rather than the shipped list.
+
+    Worth knowing on the Lists screen: a shipped category is replaced on every
+    package update and a copy of it never is, and a user who edited one should
+    be able to see which they are looking at.
+    """
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "name": self.name,
             "domains": sorted(self.domains),
             "apps": sorted(self.apps),
+            "custom": self.custom,
         }
 
 
-def parse_category(path: Path) -> Category | None:
+def parse_category(path: Path, *, custom: bool = False) -> Category | None:
     """Read one category file, or ``None`` if it is not usable."""
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -74,6 +83,7 @@ def parse_category(path: Path) -> Category | None:
         name=name.strip(),
         domains=_strings(raw.get("domains"), path, "domains"),
         apps=_strings(raw.get("apps"), path, "apps"),
+        custom=custom,
     )
 
 
@@ -98,7 +108,7 @@ def load_categories(
 ) -> dict[str, Category]:
     """Every category this machine knows, the user's copies winning."""
     found: dict[str, Category] = {}
-    for directory in (shipped, overrides):
+    for directory, custom in ((shipped, False), (overrides, True)):
         if directory is None:
             continue
         try:
@@ -106,10 +116,52 @@ def load_categories(
         except OSError:
             continue
         for path in files:
-            category = parse_category(path)
+            category = parse_category(path, custom=custom)
             if category is not None:
                 found[category.id] = category
     return found
+
+
+def write_category(category: Category, directory: Path) -> Path:
+    """Write a user's copy of a category, which replaces the shipped one.
+
+    SPEC 12 wants lists that are both editable and updated with the package,
+    which only works if the two live apart: the package owns
+    ``/usr/share/anchor/categories`` and replaces it freely, and this writes
+    into ``/etc/anchor/categories``, where nothing will overwrite it.
+
+    Written whole rather than patched, and through a temporary file, so a
+    machine that loses power in the middle of an edit has either the old list
+    or the new one and never half of each (SPEC 6.1).
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{category.id}.toml"
+    temporary = path.with_name(f".{path.name}.new")
+    temporary.write_text(_as_toml(category), encoding="utf-8")
+    temporary.replace(path)
+    return path
+
+
+def _as_toml(category: Category) -> str:
+    lines = [
+        "# Written by Anchor. This file replaces the category the package ships,",
+        "# and package updates will not touch it.",
+        f"name = {_quote(category.name)}",
+        "",
+        "domains = [",
+        *(f"  {_quote(domain)}," for domain in sorted(category.domains)),
+        "]",
+        "",
+        "apps = [",
+        *(f"  {_quote(app)}," for app in sorted(category.apps)),
+        "]",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _quote(text: str) -> str:
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
 
 
 @dataclass(frozen=True, slots=True)
