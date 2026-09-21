@@ -132,3 +132,13 @@ class TestTheWayOut:
         screen = shown(hardness="mandatory", can_postpone=False, can_skip=False)
 
         assert "cannot be skipped or postponed" in screen.footnote
+
+    def test_a_flexible_break_that_offers_nothing_still_names_itself(self) -> None:
+        """Belt and braces: the buttons are decided by the engine, not here.
+
+        If a future rule ever leaves a Flexible break with no way out, the
+        screen says what it is rather than going silent.
+        """
+        screen = shown(hardness="flexible", can_postpone=False, can_skip=False)
+
+        assert screen.footnote == "Flexible breaks"
