@@ -39,6 +39,7 @@ from anchor.engine.sessions import (
     start_session,
 )
 from anchor.engine.state import EngineState
+from anchor.engine.stats import Statistics
 from anchor.engine.store import LoadStatus, SignedStore, load_or_create_key
 from anchor.engine.timekeeping import Clock, SystemClock, reconcile
 from anchor.protocol.errors import AnchorError, ErrorCode, RatchetViolationError
@@ -80,6 +81,8 @@ class Engine:
         self.profiles: dict[str, Profile] = {}
         self.categories: dict[str, Category] = {}
         self._sinks: list[EventSink] = []
+
+        self.stats = Statistics(paths.stats_db, retention_days=settings.retention_days)
 
         key = load_or_create_key(paths.key_file)
         self._config_store = SignedStore(paths.config_file, key)
@@ -459,6 +462,9 @@ class Engine:
 
         domain = str(request.payload["domain"])
         rule = str(request.payload["rule"])
+        self.stats.attempt(
+            session_id=session.id, kind="domain", target=domain, at=self.clock.wall()
+        )
         # This event carries a domain, and goes only to subscribers in the
         # user's own session so the agent can show a notification. It is never
         # written to the log (SPEC 13).
@@ -496,6 +502,8 @@ class Engine:
 
         self.state.session = session.with_app_blocks(len(names))
         self.save()
+        for name in names:
+            self.stats.attempt(session_id=session.id, kind="app", target=name, at=self.clock.wall())
         # "launch" means the user opened it during the session and it never
         # got a window; "closed" means it was already open when the session
         # began. The same event, because it is the same fact, with the reason
@@ -532,15 +540,36 @@ class Engine:
         if outcome.state == session.breaks and not outcome.events:
             return
 
+        self._record_breaks(session.id, session.breaks, outcome.state)
         self.state.session = session.with_breaks(outcome.state)
         self.save()
         for name, payload in outcome.events:
             self.emit(name, {**payload, "phase": str(outcome.state.phase)})
 
+    def _record_breaks(self, session_id: str, before: BreakState, after: BreakState) -> None:
+        """Write down what changed, rather than what was announced (SPEC 13).
+
+        Reading the counters instead of the events catches the break nobody
+        saw: an absence that covers one counts it as taken and publishes
+        nothing, and a statistic that only counted announcements would quietly
+        lose it.
+        """
+        for outcome, count in (
+            ("taken", after.taken - before.taken),
+            ("postponed", after.postponed_total - before.postponed_total),
+            ("skipped", after.skipped - before.skipped),
+        ):
+            for _ in range(max(0, count)):
+                self.stats.break_outcome(
+                    session_id=session_id, outcome=outcome, at=self.clock.wall()
+                )
+
     def _on_break_skip(self, request: Request) -> Response:
         """Give up the break now running, if the profile allows it (SPEC 10)."""
         session, profile, state = self._break_context()
-        self.state.session = session.with_breaks(skip_break(state, profile.breaks, self.clock))
+        skipped = skip_break(state, profile.breaks, self.clock)
+        self._record_breaks(session.id, state, skipped)
+        self.state.session = session.with_breaks(skipped)
         self.save()
         self.emit(
             "break.ended",
@@ -556,6 +585,7 @@ class Engine:
         """Push the break back, if the profile allows it (SPEC 10)."""
         session, profile, state = self._break_context()
         moved = postpone_break(state, profile.breaks, self.clock)
+        self._record_breaks(session.id, state, moved)
         self.state.session = session.with_breaks(moved)
         self.save()
         self.emit(
@@ -701,6 +731,13 @@ class Engine:
         self.save()
         self._match_refusal()
 
+        self.stats.session_started(
+            session_id=session.id,
+            profile=session.profile,
+            level=str(session.level),
+            origin=str(session.origin),
+            at=session.anchor.started_at,
+        )
         self.emit("session.started", self.status())
         log.info(
             "session %s started: profile=%s level=%s duration=%.0fs",
@@ -780,6 +817,17 @@ class Engine:
         self.state.session = None
         self.save()
         self._match_refusal()
+
+        self.stats.session_ended(
+            session_id=session.id,
+            started_at=session.anchor.started_at,
+            ended_at=self.clock.wall(),
+            reason=reason,
+        )
+        # The window moves with every session, so this is where it is swept.
+        # Pruning on a timer would mean a timer that exists to delete things.
+        self.stats.prune(now=self.clock.wall())
+
         log.info("session %s ended: %s", session.id, reason)
         self.emit(
             "session.ended",
@@ -792,6 +840,12 @@ class Engine:
     def _store_rupture(self, rupture: Rupture) -> None:
         self.state.ruptures.append(rupture.to_dict())
         self.save()
+        session = self.state.session
+        self.stats.rupture(
+            session_id=session.id if session else None,
+            kind=str(rupture.kind),
+            at=rupture.at,
+        )
         log.warning("rupture recorded: %s (%s)", rupture.kind, rupture.detail)
         self.emit("rupture.recorded", rupture.to_dict())
 
