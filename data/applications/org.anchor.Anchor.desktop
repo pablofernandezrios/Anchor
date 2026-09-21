@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Anchor
+GenericName=Focus and blocking
+Comment=Focus sessions that are hard to walk away from
+Exec=anchor-gui
+Icon=org.anchor.Anchor
+Terminal=false
+Categories=Utility;GTK;
+Keywords=focus;block;distraction;pomodoro;concentration;
+StartupNotify=true
+StartupWMClass=org.anchor.Anchor
+X-GNOME-UsesNotifications=true

@@ -2,6 +2,7 @@ packaging/systemd/anchord.service lib/systemd/system/
 packaging/systemd/anchor-blockerd.service lib/systemd/system/
 packaging/systemd/anchor-agent.service lib/systemd/user/
 data/categories/* usr/share/anchor/categories/
+data/applications/* usr/share/applications/
 data/essentials.txt usr/share/anchor/
 data/doh-endpoints.txt usr/share/anchor/
 data/doh-domains.txt usr/share/anchor/

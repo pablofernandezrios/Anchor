@@ -42,6 +42,7 @@ class Agent:
         paths: Paths,
         *,
         tray: Any = None,
+        menu: Any = None,
         notifier: Any = None,
         overlay: Any = None,
         schedule: Callable[[Callable[[], None]], None] | None = None,
@@ -49,6 +50,7 @@ class Agent:
         self.paths = paths
         self.model = IndicatorModel()
         self._tray = tray
+        self._menu = menu
         self._notifier = notifier
         self._overlay = overlay
         # Drawing happens on the desktop's own thread when there is one; the
@@ -90,18 +92,42 @@ class Agent:
 
     def _draw(self) -> None:
         view = self.model.view
-        if self._tray is None:
+        if self._tray is None and self._menu is None:
             log.debug("indicator: %s", view)
             return
         self._schedule(lambda: self._show(view))
 
     def _show(self, view: Any) -> None:
         try:
-            self._tray.show(view)
+            if self._tray is not None:
+                self._tray.show(view)
+            if self._menu is not None:
+                self._menu.show(view.menu)
         except Exception:
             # The panel is not worth the session. Anchor keeps blocking with
             # or without a top bar.
             log.exception("could not update the indicator")
+
+    def on_menu_action(self, action: str) -> None:
+        """A click on one of the menu's two buttons (SPEC 14.1)."""
+        if action == "open":
+            open_the_interface()
+            return
+        if action == "extend":
+            # The menu has nowhere to ask how long, so it opens the window
+            # where the question can be asked properly. Extending by a guess
+            # would be Anchor deciding something for the user.
+            open_the_interface()
+            return
+        log.debug("nothing is bound to the menu action %r", action)
+
+    def use_menu(self, menu: Any) -> None:
+        """Attach the indicator's menu.
+
+        Set after construction, like the overlay: the menu's clicks come back
+        to the agent, so one of the two has to exist first.
+        """
+        self._menu = menu
 
     def use_overlay(self, overlay: Any) -> None:
         """Attach the break overlay.
@@ -216,6 +242,7 @@ def _run_on_the_desktop(paths: Paths) -> int:
         DesktopNotifier,
         DesktopUnavailableError,
         TrayItem,
+        TrayMenu,
         session_bus,
     )
 
@@ -241,7 +268,13 @@ def _run_on_the_desktop(paths: Paths) -> int:
     )
     agent.use_overlay(_make_overlay(agent))
 
-    tray.start(on_activate=_open_the_interface)
+    # The menu's clicks come back to the agent, so the agent is built first
+    # and told about the menu afterwards (ADR 3).
+    tray_menu = TrayMenu(connection, on_action=agent.on_menu_action)
+    agent.use_menu(tray_menu)
+
+    tray_menu.start()
+    tray.start(on_activate=open_the_interface)
     agent.start()
 
     for received in (signal.SIGTERM, signal.SIGINT):
@@ -251,6 +284,7 @@ def _run_on_the_desktop(paths: Paths) -> int:
         loop.run()
     finally:
         agent.stop()
+        tray_menu.stop()
         tray.stop()
     return 0
 
@@ -289,13 +323,20 @@ def _quit(loop: Any) -> Callable[[], bool]:
     return stop
 
 
-def _open_the_interface() -> None:
+def open_the_interface() -> None:
     """Clicking the indicator opens Anchor (SPEC 14.1).
 
-    There is no interface to open yet; it arrives with Milestone 8. Saying so
-    in the log beats a click that silently does nothing.
+    Launched rather than imported: the interface is a GTK4 application with a
+    main loop of its own, and the agent has one already. Two in a process is
+    one too many, and a window that died with the agent would take the
+    indicator down with it.
     """
-    log.info("the indicator was clicked; the interface arrives in Milestone 8")
+    from gi.repository import Gio, GLib
+
+    try:
+        Gio.Subprocess.new(["anchor-gui"], Gio.SubprocessFlags.NONE)
+    except GLib.Error as error:
+        log.warning("could not open the interface: %s", error.message)
 
 
 if __name__ == "__main__":

@@ -116,6 +116,18 @@ def _(text: str) -> str:
     return _translate(text)
 
 
+def N_(text: str) -> str:  # noqa: N802 - gettext's own spelling
+    """Mark a string for translation without translating it yet.
+
+    For the handful of words that live in a tuple and are looked up by
+    index — weekdays, months. ``_(DAY_NAMES[index])`` translates at the
+    moment of use, but it hands the extractor a variable rather than a
+    string, so the words would never reach the catalogue at all. This marks
+    them where they are written and changes nothing at runtime.
+    """
+    return text
+
+
 def ngettext(singular: str, plural: str, count: int) -> str:
     """The one place a count changes the sentence.
 

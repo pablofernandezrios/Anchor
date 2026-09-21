@@ -138,3 +138,23 @@ class TestSaving:
     def test_following_the_desktop_is_sent_as_nothing(self) -> None:
         _type, payload = set_request("language", "")
         assert payload["value"] == ""
+
+
+class TestNumbersPeopleCanChoose:
+    def test_the_firm_wait_is_chosen_in_minutes(self) -> None:
+        """Nobody picks an exit price to the second."""
+        lowest, highest, current, factor = row("firm_wait_seconds").spin
+        assert (current, factor) == (15, 60)
+        assert (lowest, highest) == (1, 1440)
+
+    def test_the_others_are_chosen_in_their_own_units(self) -> None:
+        assert row("phrase_length").spin == (20, 1000, 150, 1)
+        assert row("retention_days").spin == (1, 3650, 90, 1)
+
+    def test_the_bounds_are_the_engine_s_own(self) -> None:
+        """So the box cannot offer a value the engine will refuse."""
+        from anchor.engine.preferences import PREFERENCES
+
+        lowest, highest, _current, _factor = row("retention_days").spin
+        assert lowest == PREFERENCES["retention_days"].minimum
+        assert highest == PREFERENCES["retention_days"].maximum

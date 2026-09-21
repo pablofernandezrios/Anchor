@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from anchor.cli.durations import format_duration
+from anchor.engine.preferences import PREFERENCES
 from anchor.gui.i18n import _
 
 #: The settings this screen shows, in the order it shows them. Anything the
@@ -50,6 +51,16 @@ class Row:
 
     choices: tuple[Choice, ...] = ()
     raw: Any = None
+
+    spin: tuple[int, int, int, int] = (0, 0, 0, 1)
+    """For a number: its lowest value, its highest, the one to show, and what
+    to multiply it by before sending.
+
+    The Firm wait is stored in seconds and chosen in minutes, because nobody
+    picks an exit price to the second, and a box counting to 86400 is a box
+    that cannot be used.
+    """
+
     is_default: bool = True
     locked: bool = False
     reason: str = ""
@@ -83,6 +94,7 @@ def settings_view(*, settings: list[dict[str, Any]], in_session: bool = False) -
                 kind=_kind(key),
                 choices=_choices(key),
                 raw=entry.get("value"),
+                spin=_spin(key, entry.get("value")),
                 is_default=bool(entry.get("is_default", False)),
                 locked=locked,
                 reason=(
@@ -146,6 +158,26 @@ def _choices(key: str) -> tuple[Choice, ...]:
         Choice(key="en", title=_("English")),
         Choice(key="es", title=_("Spanish")),
     )
+
+
+def _spin(key: str, value: Any) -> tuple[int, int, int, int]:
+    """The bounds a number is chosen between, and its unit.
+
+    Read from the engine's own limits rather than repeated here, so the box
+    cannot offer a value the engine will then refuse.
+    """
+    setting = PREFERENCES.get(key)
+    if setting is None or setting.kind is not int:
+        return (0, 0, 0, 1)
+
+    lowest = setting.minimum or 0
+    highest = setting.maximum or 0
+    number = int(value or 0)
+    if key == "firm_wait_seconds":
+        # Stored in seconds, chosen in minutes: a box counting to 86400 is a
+        # box nobody can use.
+        return (max(1, lowest // 60), highest // 60, max(1, round(number / 60)), 60)
+    return (lowest, highest, number, 1)
 
 
 def _shown(key: str, value: Any) -> str:

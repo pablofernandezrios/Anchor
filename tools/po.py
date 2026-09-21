@@ -36,8 +36,9 @@ POT = PO_DIR / "anchor.pot"
 BUILD = ROOT / "build" / "locale"
 DOMAIN = "anchor"
 
-#: The functions that mark a string for translation.
-MARKERS = frozenset({"_", "ngettext"})
+#: The functions that mark a string for translation. ``N_`` marks one that is
+#: translated later, by index out of a tuple.
+MARKERS = frozenset({"_", "N_", "ngettext"})
 
 HEADER = """\
 # Anchor's translatable strings.

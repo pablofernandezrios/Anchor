@@ -43,8 +43,13 @@ dependencies. PyGObject was already required for the interface.
 - One fewer dependency, and no GTK3 anywhere in Anchor.
 - The menu is more work. `libayatana-appindicator` provides `com.canonical.dbusmenu`
   for free; implementing the interface directly means exporting that menu
-  ourselves. SPEC 14.1 lists what the menu holds, so the shape is known;
-  Milestone 8 carries the cost.
+  ourselves. SPEC 14.1 lists what the menu holds, so the shape is known.
+  **Paid in Milestone 9**: `anchor/agent/menu.py` arranges the items and
+  `TrayMenu` in `anchor/agent/desktop.py` answers the panel's questions about
+  them. It came to about 150 lines, and the one part worth knowing is the
+  revision number: a panel caches the layout and only asks again when told
+  the revision moved, so a menu that changes without saying so is a menu that
+  never changes on screen.
 - Whether the `XAyatanaLabel` text renders is the extension's decision, not
   Anchor's. If an extension shows only the icon, the remaining time is still on
   the Home screen and in `anchor status`, and onboarding can say so.

@@ -296,3 +296,75 @@ class TestTheBreakOverlay:
         agent.on_event(Event(event="break.started", payload={"seconds": 300, "type": "overlay"}))
 
         assert notifier.sent[-1].summary == "Break time"
+
+
+class TestTheIndicatorMenu:
+    """The menu ADR 3 made Anchor export for itself (SPEC 14.1)."""
+
+    def agent(self, tmp_path: Path) -> tuple[Any, list[Any]]:
+        from anchor.agent.main import Agent
+        from anchor.engine.paths import Paths
+
+        shown: list[Any] = []
+
+        class Menu:
+            def show(self, items: Any) -> None:
+                shown.append(items)
+
+        built = Agent(Paths.resolve(tmp_path))
+        built.use_menu(Menu())
+        return built, shown
+
+    def test_a_session_puts_its_lines_in_the_menu(self, tmp_path: Path) -> None:
+        agent, shown = self.agent(tmp_path)
+
+        agent.on_status(
+            {"active": True, "profile": "Study", "level": "firm", "remaining_seconds": 60.0}
+        )
+
+        assert shown
+        labels = [item.label for item in shown[-1]]
+        assert "Extend session" in labels
+
+    def test_no_session_empties_it(self, tmp_path: Path) -> None:
+        """An indicator that is not shown has nothing to offer."""
+        agent, shown = self.agent(tmp_path)
+
+        agent.on_status({"active": False})
+
+        assert shown[-1] == ()
+
+    def test_open_anchor_starts_the_interface(self, tmp_path: Path) -> None:
+        agent, _shown = self.agent(tmp_path)
+        opened: list[bool] = []
+
+        import anchor.agent.main as module
+
+        original = module.open_the_interface
+        module.open_the_interface = lambda: opened.append(True)  # type: ignore[assignment]
+        try:
+            agent.on_menu_action("open")
+        finally:
+            module.open_the_interface = original  # type: ignore[assignment]
+
+        assert opened == [True]
+
+    def test_extending_opens_it_too(self, tmp_path: Path) -> None:
+        """The menu has nowhere to ask how long, and guessing is not Anchor's."""
+        agent, _shown = self.agent(tmp_path)
+        opened: list[bool] = []
+
+        import anchor.agent.main as module
+
+        original = module.open_the_interface
+        module.open_the_interface = lambda: opened.append(True)  # type: ignore[assignment]
+        try:
+            agent.on_menu_action("extend")
+        finally:
+            module.open_the_interface = original  # type: ignore[assignment]
+
+        assert opened == [True]
+
+    def test_an_action_nothing_is_bound_to_is_ignored(self, tmp_path: Path) -> None:
+        agent, _shown = self.agent(tmp_path)
+        agent.on_menu_action("fly")

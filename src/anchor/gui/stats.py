@@ -29,7 +29,7 @@ from datetime import date
 from typing import Any, Final
 
 from anchor.cli.durations import format_duration
-from anchor.gui.i18n import _
+from anchor.gui.i18n import N_, _
 from anchor.gui.schedules import DAY_NAMES
 from anchor.protocol.types import RuptureKind
 
@@ -172,18 +172,18 @@ def _date(text: str) -> date | None:
 
 
 _MONTHS: Final = (
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
+    N_("January"),
+    N_("February"),
+    N_("March"),
+    N_("April"),
+    N_("May"),
+    N_("June"),
+    N_("July"),
+    N_("August"),
+    N_("September"),
+    N_("October"),
+    N_("November"),
+    N_("December"),
 )
 
 

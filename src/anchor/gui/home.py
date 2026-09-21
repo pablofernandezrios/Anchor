@@ -32,7 +32,7 @@ from datetime import datetime
 from typing import Any
 
 from anchor.cli.durations import format_countdown, format_duration
-from anchor.gui.i18n import _
+from anchor.gui.i18n import N_, _
 from anchor.protocol.types import BreakType, Level, SessionOrigin, SessionPhase, Valve
 
 #: Schedules shown on Home. The mockup draws two; more belongs on the
@@ -126,15 +126,17 @@ def home_view(
     schedules: dict[str, Any] | None = None,
     stats: dict[str, Any] | None = None,
     connected: bool = True,
+    apps: dict[str, str] | None = None,
+    today: int | None = None,
 ) -> HomeView:
     """Everything the Home screen shows, from one moment's answers."""
     listing = schedules or {}
     figures = stats or {}
 
     return HomeView(
-        session=_card(status, figures) if status.get("active") else None,
+        session=_card(status, figures, apps or {}) if status.get("active") else None,
         idle=None if status.get("active") else _idle(),
-        schedules=_upcoming(listing),
+        schedules=_upcoming(listing, today=today),
         skips=_skips(status, listing),
         today=_today(figures),
         banner=(
@@ -148,7 +150,7 @@ def home_view(
 # -- the session ---------------------------------------------------------
 
 
-def _card(status: dict[str, Any], stats: dict[str, Any]) -> SessionCard:
+def _card(status: dict[str, Any], stats: dict[str, Any], apps: dict[str, str]) -> SessionCard:
     level = str(status.get("level", Level.SOFT))
     remaining = float(status.get("remaining_seconds", 0))
     rest = status.get("break") if isinstance(status.get("break"), dict) else None
@@ -163,7 +165,7 @@ def _card(status: dict[str, Any], stats: dict[str, Any]) -> SessionCard:
         break_when=_break_when(rest),
         break_detail=_break_detail(rest),
         attempts=str(int(status.get("blocked_attempts", 0))),
-        attempts_detail=_refused(stats),
+        attempts_detail=_refused(stats, apps),
         exit_how=_exit_how(status),
         exit_rule=_exit_rule(level),
         exit_pending=_exit_pending(status),
@@ -200,8 +202,20 @@ def _break_when(rest: dict[str, Any] | None) -> str:
         return _("No breaks in this profile")
     seconds = float(rest.get("remaining_seconds", 0))
     if str(rest.get("phase", "")) == str(SessionPhase.BREAK):
-        return _("{duration} left").format(duration=format_duration(seconds))
-    return _("in {duration}").format(duration=format_duration(seconds))
+        return _("{duration} left").format(duration=_roughly(seconds))
+    return _("in {duration}").format(duration=_roughly(seconds))
+
+
+def _roughly(seconds: float) -> str:
+    """Minutes, once there are minutes to speak of.
+
+    "in 49 min 56 s" is a number pretending to be useful: nobody plans the
+    next hour to the second, and a line that changes every second is one the
+    eye learns to skip. Under a minute the seconds are the whole story.
+    """
+    if seconds < 60:
+        return format_duration(seconds)
+    return format_duration(round(seconds / 60) * 60)
 
 
 def _break_detail(rest: dict[str, Any] | None) -> str:
@@ -223,16 +237,26 @@ def _break_detail(rest: dict[str, Any] | None) -> str:
     )
 
 
-def _refused(stats: dict[str, Any]) -> str:
-    """The domains behind the count, as the mockup names them.
+def _refused(stats: dict[str, Any], apps: dict[str, str]) -> str:
+    """What is behind the count, as the mockup names it.
 
     Read from the statistics rather than kept in the session: SPEC 13 makes
     that database the one place a domain is written down, and the interface
     reading from it is not a second copy.
+
+    An application is named the way its menu entry names it. ``discord.desktop``
+    is Anchor's identifier for it, not a thing anyone recognises on a line
+    that otherwise holds websites.
     """
     targets = stats.get("attempts_by_target") or []
-    names = [str(entry.get("target", "")) for entry in targets[:NAMED_TARGETS]]
-    return ", ".join(name for name in names if name)
+    names: list[str] = []
+    for entry in targets[:NAMED_TARGETS]:
+        target = str(entry.get("target", ""))
+        if str(entry.get("kind", "")) == "app":
+            target = apps.get(target, target.removesuffix(".desktop").capitalize())
+        if target:
+            names.append(target)
+    return ", ".join(names)
 
 
 def _exit_how(status: dict[str, Any]) -> str:
@@ -318,20 +342,36 @@ def _idle() -> IdleCard:
 
 
 #: Monday first, as the week is drawn everywhere in Anchor.
-_DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+_DAYS = (
+    N_("Monday"),
+    N_("Tuesday"),
+    N_("Wednesday"),
+    N_("Thursday"),
+    N_("Friday"),
+    N_("Saturday"),
+    N_("Sunday"),
+)
 
 
-def _upcoming(listing: dict[str, Any]) -> tuple[ScheduleLine, ...]:
+def _upcoming(listing: dict[str, Any], *, today: int | None = None) -> tuple[ScheduleLine, ...]:
     entries = [entry for entry in listing.get("schedules", []) if entry.get("enabled", True)]
-    # The one running now first, then the rest in the order the engine sent
-    # them, which is by start time.
-    entries.sort(key=lambda entry: (not entry.get("active"), entry.get("start", "")))
+    weekday = datetime.now().weekday() if today is None else today
+    # What is running now, then what runs today, then the rest by start time.
+    # Sorting by start time alone puts Saturday's ten o'clock above this
+    # afternoon's four, which is not what "coming up" means.
+    entries.sort(
+        key=lambda entry: (
+            not entry.get("active"),
+            weekday not in list(entry.get("days") or ()),
+            entry.get("start", ""),
+        )
+    )
 
     lines: list[ScheduleLine] = []
     for entry in entries[:UPCOMING]:
         lines.append(
             ScheduleLine(
-                when=_when(entry),
+                when=_when(entry, weekday),
                 name=str(entry.get("name", "")),
                 level=_level_name(str(entry.get("level", Level.SOFT))),
                 now=bool(entry.get("active")),
@@ -340,14 +380,14 @@ def _upcoming(listing: dict[str, Any]) -> tuple[ScheduleLine, ...]:
     return tuple(lines)
 
 
-def _when(entry: dict[str, Any]) -> str:
+def _when(entry: dict[str, Any], today: int | None = None) -> str:
     """``Today · 16:00–19:00``, or the first weekday it runs."""
     window = f"{entry.get('start', '')}–{entry.get('end', '')}"
     if entry.get("active"):
         return _("Now · {window}").format(window=window)
 
     days = list(entry.get("days") or ())
-    today = datetime.now().weekday()
+    today = datetime.now().weekday() if today is None else today
     if today in days:
         return _("Today · {window}").format(window=window)
     if not days:

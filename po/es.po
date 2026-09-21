@@ -1,0 +1,1082 @@
+# Anchor in Spanish.
+# The wording follows the approved mockups, which are themselves in Spanish.
+msgid ""
+msgstr ""
+"Project-Id-Version: anchor\\n"
+"Language: es\\n"
+"MIME-Version: 1.0\\n"
+"Content-Type: text/plain; charset=UTF-8\\n"
+"Content-Transfer-Encoding: 8bit\\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\\n"
+
+
+#: src/anchor/gui/app.py:316
+msgid "Creating schedules from here arrives with packaging."
+msgstr "Crear horarios desde aquí llega con el empaquetado."
+
+#: src/anchor/gui/app.py:331
+msgid "Extend the session"
+msgstr "Ampliar la sesión"
+
+#: src/anchor/gui/app.py:332
+msgid "Any amount. A session can be extended but never shortened."
+msgstr "Lo que quieras. Una sesión se puede ampliar, nunca acortar."
+
+#: src/anchor/gui/app.py:337
+#: src/anchor/gui/app.py:502
+msgid "Cancel"
+msgstr "Cancelar"
+
+#: src/anchor/gui/app.py:338
+msgid "Extend"
+msgstr "Ampliar"
+
+#: src/anchor/gui/app.py:362
+msgid "There are no profiles yet."
+msgstr "Todavía no hay perfiles."
+
+#: src/anchor/gui/app.py:496
+msgid "Delete all statistics?"
+msgstr "¿Borrar todas las estadísticas?"
+
+#: src/anchor/gui/app.py:497
+msgid "This cannot be undone. Anchor keeps no copy, because a private record that survives its own deletion is not private."
+msgstr "No se puede deshacer. Anchor no guarda ninguna copia, porque un registro privado que sobrevive a su propio borrado no es privado."
+
+#: src/anchor/gui/app.py:503
+msgid "Delete"
+msgstr "Borrar"
+
+#: src/anchor/gui/app.py:517
+msgid "Editing schedules from here arrives with packaging."
+msgstr "Editar horarios desde aquí llega con el empaquetado."
+
+#: src/anchor/gui/app.py:539
+msgid "The test could not start"
+msgstr "La prueba no pudo empezar"
+
+#: src/anchor/gui/app.py:541
+msgid "Run `anchor doctor` to see what is wrong."
+msgstr "Ejecuta `anchor doctor` para ver qué falla."
+
+#: src/anchor/gui/app.py:576
+msgid "Anchor could not do that."
+msgstr "Anchor no ha podido hacer eso."
+
+#: src/anchor/gui/dialogs.py:34
+#: src/anchor/gui/home.py:337
+#: src/anchor/gui/start.py:298
+msgid "Start session"
+msgstr "Empezar sesión"
+
+#: src/anchor/gui/dialogs.py:46
+msgid "Review and start"
+msgstr "Revisar y empezar"
+
+#: src/anchor/gui/dialogs.py:74
+#: src/anchor/gui/dialogs.py:75
+#: src/anchor/gui/pages.py:190
+msgid "Profile"
+msgstr "Perfil"
+
+#: src/anchor/gui/dialogs.py:87
+msgid "Duration"
+msgstr "Duración"
+
+#: src/anchor/gui/dialogs.py:90
+msgid "Shorter"
+msgstr "Más corta"
+
+#: src/anchor/gui/dialogs.py:90
+msgid "Longer"
+msgstr "Más larga"
+
+#: src/anchor/gui/dialogs.py:114
+msgid "Blocking level"
+msgstr "Nivel de bloqueo"
+
+#: src/anchor/gui/dialogs.py:133
+#: src/anchor/gui/home.py:274
+#: src/anchor/gui/home.py:309
+msgid "Emergency valve"
+msgstr "Válvula de emergencia"
+
+#: src/anchor/gui/dialogs.py:134
+msgid "Chosen now, because a Strict session cannot be cancelled."
+msgstr "Se elige ahora, porque una sesión estricta no se puede cancelar."
+
+#: src/anchor/gui/dialogs.py:153
+#: src/anchor/gui/pages.py:284
+#: src/anchor/gui/stats.py:129
+msgid "Breaks"
+msgstr "Descansos"
+
+#: src/anchor/gui/dialogs.py:239
+#: src/anchor/gui/dialogs.py:280
+msgid "Next"
+msgstr "Siguiente"
+
+#: src/anchor/gui/dialogs.py:280
+msgid "Run the test"
+msgstr "Hacer la prueba"
+
+#: src/anchor/gui/dialogs.py:293
+msgid "Testing…"
+msgstr "Probando…"
+
+#: src/anchor/gui/dialogs.py:310
+msgid "Finish"
+msgstr "Terminar"
+
+#: src/anchor/gui/home.py:145
+msgid "Anchor cannot reach its engine. These numbers may be out of date."
+msgstr "Anchor no puede comunicarse con su motor. Estos números pueden estar desactualizados."
+
+#: src/anchor/gui/home.py:161
+msgid "Started at {time}"
+msgstr "Empezó a las {time}"
+
+#: src/anchor/gui/home.py:163
+msgid "remaining · ends at {time}"
+msgstr "restantes · termina a las {time}"
+
+#: src/anchor/gui/home.py:178
+#: src/anchor/gui/start.py:203
+#: src/anchor/gui/start.py:283
+msgid "Soft"
+msgstr "Suave"
+
+#: src/anchor/gui/home.py:179
+#: src/anchor/gui/start.py:208
+#: src/anchor/gui/start.py:284
+msgid "Firm"
+msgstr "Firme"
+
+#: src/anchor/gui/home.py:180
+#: src/anchor/gui/start.py:213
+#: src/anchor/gui/start.py:285
+msgid "Strict"
+msgstr "Estricto"
+
+#: src/anchor/gui/home.py:196
+msgid "On a break"
+msgstr "En un descanso"
+
+#: src/anchor/gui/home.py:197
+msgid "Next break"
+msgstr "Próximo descanso"
+
+#: src/anchor/gui/home.py:202
+msgid "No breaks in this profile"
+msgstr "Sin descansos en este perfil"
+
+#: src/anchor/gui/home.py:205
+msgid "{duration} left"
+msgstr "quedan {duration}"
+
+#: src/anchor/gui/home.py:206
+msgid "in {duration}"
+msgstr "en {duration}"
+
+#: src/anchor/gui/home.py:227
+msgid "fullscreen"
+msgstr "pantalla completa"
+
+#: src/anchor/gui/home.py:228
+msgid "notification"
+msgstr "notificación"
+
+#: src/anchor/gui/home.py:265
+msgid "Wait 5 minutes"
+msgstr "Espera de 5 minutos"
+
+#: src/anchor/gui/home.py:267
+msgid "Wait + text"
+msgstr "Espera + texto"
+
+#: src/anchor/gui/home.py:271
+#: src/anchor/gui/start.py:224
+msgid "30-minute wait"
+msgstr "Espera de 30 minutos"
+
+#: src/anchor/gui/home.py:272
+#: src/anchor/gui/start.py:229
+msgid "Random phrase"
+msgstr "Frase aleatoria"
+
+#: src/anchor/gui/home.py:273
+msgid "Wait and phrase"
+msgstr "Espera y frase"
+
+#: src/anchor/gui/home.py:279
+msgid "Soft level rule. Lists stay editable."
+msgstr "Regla del nivel suave. Las listas siguen siendo editables."
+
+#: src/anchor/gui/home.py:281
+msgid "Firm level rule. You may only add to the lists."
+msgstr "Regla del nivel firme. Solo puedes añadir a las listas."
+
+#: src/anchor/gui/home.py:282
+msgid "Strict level rule. It cannot be cancelled; the valve is the only way out."
+msgstr "Regla del nivel estricto. No se puede cancelar; la válvula es la única salida."
+
+#: src/anchor/gui/home.py:291
+msgid "Leaving in {duration}. You can still withdraw it."
+msgstr "Saldrás en {duration}. Todavía puedes anular la solicitud."
+
+#: src/anchor/gui/home.py:295
+msgid "Type the phrase to finish leaving."
+msgstr "Escribe la frase para terminar de salir."
+
+#: src/anchor/gui/home.py:296
+msgid "The wait is over."
+msgstr "La espera ha terminado."
+
+#: src/anchor/gui/home.py:304
+msgid "Extend session"
+msgstr "Ampliar sesión"
+
+#: src/anchor/gui/home.py:313
+msgid "Cancel session…"
+msgstr "Cancelar sesión…"
+
+#: src/anchor/gui/home.py:319
+msgid "Skip this session"
+msgstr "Saltar esta sesión"
+
+#: src/anchor/gui/home.py:323
+#: src/anchor/gui/schedules.py:258
+msgid "No skips left this week. They come back on Monday."
+msgstr "No quedan saltos esta semana. Vuelven el lunes."
+
+#: src/anchor/gui/home.py:329
+msgid "Withdraw"
+msgstr "Anular"
+
+#: src/anchor/gui/home.py:335
+msgid "Nothing is blocked right now"
+msgstr "Ahora mismo no hay nada bloqueado"
+
+#: src/anchor/gui/home.py:336
+msgid "Start a session, or let a schedule start one for you."
+msgstr "Empieza una sesión, o deja que un horario la empiece por ti."
+
+#: src/anchor/gui/home.py:346
+msgid "Monday"
+msgstr "Lunes"
+
+#: src/anchor/gui/home.py:347
+msgid "Tuesday"
+msgstr "Martes"
+
+#: src/anchor/gui/home.py:348
+msgid "Wednesday"
+msgstr "Miércoles"
+
+#: src/anchor/gui/home.py:349
+msgid "Thursday"
+msgstr "Jueves"
+
+#: src/anchor/gui/home.py:350
+msgid "Friday"
+msgstr "Viernes"
+
+#: src/anchor/gui/home.py:351
+msgid "Saturday"
+msgstr "Sábado"
+
+#: src/anchor/gui/home.py:352
+msgid "Sunday"
+msgstr "Domingo"
+
+#: src/anchor/gui/home.py:387
+msgid "Now · {window}"
+msgstr "Ahora · {window}"
+
+#: src/anchor/gui/home.py:392
+msgid "Today · {window}"
+msgstr "Hoy · {window}"
+
+#: src/anchor/gui/home.py:404
+#: src/anchor/gui/schedules.py:147
+msgid "Skips this week: {used} of {total}"
+msgstr "Saltos esta semana: {used} de {total}"
+
+#: src/anchor/gui/home.py:410
+msgid "of focus"
+msgstr "de foco"
+
+#: src/anchor/gui/home.py:411
+msgid "breaks taken"
+msgstr "descansos tomados"
+
+#: src/anchor/gui/home.py:412
+msgid "blocked attempts"
+msgstr "intentos bloqueados"
+
+#: src/anchor/gui/lists.py:80
+msgid "A session is blocking this category, so nothing can be taken out of it."
+msgstr "Una sesión está bloqueando esta categoría, así que no se le puede quitar nada."
+
+#: src/anchor/gui/lists.py:93
+msgid "Your copy. Package updates will not change it."
+msgstr "Tu copia. Las actualizaciones del paquete no la tocarán."
+
+#: src/anchor/gui/lists.py:95
+msgid "Shipped with Anchor, and updated with it."
+msgstr "Viene con Anchor, y se actualiza con él."
+
+#: src/anchor/gui/lists.py:105
+msgid "Editing a category saves your own copy of it. The list Anchor ships keeps being updated, and your copy is what gets used."
+msgstr "Editar una categoría guarda tu propia copia. La lista que trae Anchor se sigue actualizando, y la que se usa es la tuya."
+
+#: src/anchor/gui/lists.py:109
+msgid "No categories are installed on this machine."
+msgstr "No hay ninguna categoría instalada en esta máquina."
+
+#: src/anchor/gui/lists.py:116
+#: src/anchor/gui/profiles.py:203
+msgid "1 site"
+msgstr "1 web"
+
+#: src/anchor/gui/lists.py:116
+#: src/anchor/gui/profiles.py:203
+msgid "{n} sites"
+msgstr "{n} webs"
+
+#: src/anchor/gui/lists.py:118
+#: src/anchor/gui/profiles.py:205
+#: src/anchor/gui/start.py:178
+msgid "1 app"
+msgstr "1 app"
+
+#: src/anchor/gui/lists.py:118
+#: src/anchor/gui/profiles.py:205
+#: src/anchor/gui/start.py:178
+msgid "{n} apps"
+msgstr "{n} apps"
+
+#: src/anchor/gui/onboarding.py:75
+msgid "Anchor"
+msgstr "Anchor"
+
+#: src/anchor/gui/onboarding.py:76
+msgid "Anchor makes it harder to reach what pulls you away, for as long as you asked. It is friction, not a lock: everything here is something you chose, and nothing pretends to be unbreakable."
+msgstr "Anchor pone difícil llegar a lo que te distrae, durante el tiempo que le pidas. Es fricción, no un candado: todo lo que hay aquí lo has elegido tú, y nada pretende ser inquebrantable."
+
+#: src/anchor/gui/onboarding.py:84
+msgid "Three levels of difficulty"
+msgstr "Tres niveles de dificultad"
+
+#: src/anchor/gui/onboarding.py:85
+msgid "You pick one when you start a session. They differ in how you get out."
+msgstr "Eliges uno al empezar una sesión. Se diferencian en cómo se sale."
+
+#: src/anchor/gui/onboarding.py:87
+msgid "Soft: cancel after waiting 5 minutes. Your lists stay editable."
+msgstr "Suave: cancelar tras 5 minutos de espera. Tus listas siguen siendo editables."
+
+#: src/anchor/gui/onboarding.py:88
+msgid "Firm: cancel after a long wait and typing a long random text."
+msgstr "Firme: cancelar tras una espera larga y escribir un texto aleatorio largo."
+
+#: src/anchor/gui/onboarding.py:89
+msgid "Strict: it cannot be cancelled. The emergency valve is the only way out, and VPN and Tor are blocked for the session."
+msgstr "Estricto: no se puede cancelar. La válvula de emergencia es la única salida, y la VPN y Tor quedan bloqueadas durante la sesión."
+
+#: src/anchor/gui/onboarding.py:97
+msgid "The emergency valve"
+msgstr "La válvula de emergencia"
+
+#: src/anchor/gui/onboarding.py:98
+msgid "A Strict session still has a way out, chosen before it starts so that you cannot bargain with yourself later."
+msgstr "Una sesión estricta sigue teniendo una salida, elegida antes de empezar para que luego no puedas negociar contigo mismo."
+
+#: src/anchor/gui/onboarding.py:103
+msgid "A 30-minute wait, which you can withdraw if you change your mind."
+msgstr "Una espera de 30 minutos, que puedes anular si te arrepientes."
+
+#: src/anchor/gui/onboarding.py:104
+msgid "A long random phrase, generated fresh each time and typed by hand."
+msgstr "Una frase aleatoria larga, nueva cada vez y escrita a mano."
+
+#: src/anchor/gui/onboarding.py:105
+msgid "Both, one after the other."
+msgstr "Ambas, una detrás de otra."
+
+#: src/anchor/gui/onboarding.py:106
+msgid "Every use is recorded as a rupture in your statistics. Nothing is hidden from you, and nothing is sent anywhere."
+msgstr "Cada uso se registra como ruptura en tus estadísticas. No se te oculta nada, y no se envía nada a ninguna parte."
+
+#: src/anchor/gui/onboarding.py:114
+msgid "Blocklists and allowlists"
+msgstr "Listas negras y listas blancas"
+
+#: src/anchor/gui/onboarding.py:115
+msgid "A profile either blocks what you list, or blocks everything except what you list."
+msgstr "Un perfil bloquea lo que pongas en la lista, o bloquea todo salvo lo que pongas en ella."
+
+#: src/anchor/gui/onboarding.py:120
+msgid "A blocklist is the usual choice, and the gentler one."
+msgstr "La lista negra es la opción habitual, y la más suave."
+
+#: src/anchor/gui/onboarding.py:121
+msgid "An allowlist blocks all of the web except your list. Many sites load parts of themselves from other domains and will need entries of their own."
+msgstr "La lista blanca bloquea toda la web salvo tu lista. Muchas webs cargan partes de sí mismas desde otros dominios y necesitarán sus propias entradas."
+
+#: src/anchor/gui/onboarding.py:126
+msgid "Anchor always allows a small built-in list — connectivity checks and time sync — so the machine keeps working."
+msgstr "Anchor siempre permite una pequeña lista interna —comprobaciones de conectividad y sincronización horaria— para que la máquina siga funcionando."
+
+#: src/anchor/gui/onboarding.py:134
+msgid "Let us prove it works"
+msgstr "Vamos a comprobar que funciona"
+
+#: src/anchor/gui/onboarding.py:135
+msgid "Anchor will block {sample} for {seconds} seconds and check that it really stopped resolving, while {control} keeps working. The test session ends by itself: Anchor has no way to end a session early, which is rather the point."
+msgstr "Anchor bloqueará {sample} durante {seconds} segundos y comprobará que de verdad deja de resolverse, mientras {control} sigue funcionando. La sesión de prueba termina sola: Anchor no tiene forma de terminar una sesión antes de tiempo, que es justo de lo que se trata."
+
+#: src/anchor/gui/onboarding.py:157
+#: src/anchor/gui/onboarding.py:168
+#: src/anchor/gui/onboarding.py:175
+msgid "The top bar"
+msgstr "La barra superior"
+
+#: src/anchor/gui/onboarding.py:159
+msgid "Anchor could not check whether your desktop can show a tray icon. The time left is on the Home screen either way."
+msgstr "Anchor no ha podido comprobar si tu escritorio puede mostrar un icono en la bandeja. El tiempo restante está en la pantalla de Inicio de todos modos."
+
+#: src/anchor/gui/onboarding.py:170
+msgid "Your desktop can show Anchor's icon and the time left while a session runs."
+msgstr "Tu escritorio puede mostrar el icono de Anchor y el tiempo restante mientras hay una sesión."
+
+#: src/anchor/gui/onboarding.py:177
+msgid "Nothing on this desktop can show a tray icon, so Anchor's will not appear."
+msgstr "Nada en este escritorio puede mostrar un icono de bandeja, así que el de Anchor no aparecerá."
+
+#: src/anchor/gui/onboarding.py:178
+msgid "On GNOME, install the AppIndicator extension (gnome-shell-extension-appindicator) and enable it. Ubuntu already has it."
+msgstr "En GNOME, instala la extensión AppIndicator (gnome-shell-extension-appindicator) y actívala. Ubuntu ya la trae."
+
+#: src/anchor/gui/onboarding.py:183
+msgid "Everything else works. The time left is on Home and in `anchor status`."
+msgstr "Todo lo demás funciona. El tiempo restante está en Inicio y en `anchor status`."
+
+#: src/anchor/gui/onboarding.py:251
+msgid "The block did not take effect"
+msgstr "El bloqueo no ha surtido efecto"
+
+#: src/anchor/gui/onboarding.py:252
+msgid "{sample} still resolved while Anchor was blocking it, so something is in the way of the DNS path."
+msgstr "{sample} se siguió resolviendo mientras Anchor lo bloqueaba, así que algo se interpone en el camino del DNS."
+
+#: src/anchor/gui/onboarding.py:256
+msgid "Run `anchor doctor`: it checks the resolver, the firewall table and the browser policies, and prints what to do."
+msgstr "Ejecuta `anchor doctor`: comprueba el resolutor, la tabla del cortafuegos y las políticas del navegador, y dice qué hacer."
+
+#: src/anchor/gui/onboarding.py:266
+msgid "The test could not tell"
+msgstr "La prueba no puede decidir"
+
+#: src/anchor/gui/onboarding.py:267
+msgid "Neither {sample} nor {control} resolved, so this machine's network is down and the test proves nothing either way. Try it again once you are connected."
+msgstr "Ni {sample} ni {control} se resolvieron, así que esta máquina no tiene red y la prueba no demuestra nada. Vuelve a intentarlo cuando tengas conexión."
+
+#: src/anchor/gui/onboarding.py:272
+msgid "Settings has a way to run this again."
+msgstr "En Ajustes puedes repetir esta prueba."
+
+#: src/anchor/gui/onboarding.py:278
+msgid "Anchor is working"
+msgstr "Anchor funciona"
+
+#: src/anchor/gui/onboarding.py:279
+msgid "{sample} stopped resolving while the session ran, and {control} kept working. That is exactly what a session does to the sites you block."
+msgstr "{sample} dejó de resolverse mientras duraba la sesión, y {control} siguió funcionando. Eso es exactamente lo que una sesión le hace a las webs que bloqueas."
+
+#: src/anchor/gui/pages.py:105
+#: src/anchor/gui/stats.py:120
+msgid "Blocked attempts"
+msgstr "Intentos bloqueados"
+
+#: src/anchor/gui/pages.py:106
+msgid "How to leave"
+msgstr "Cómo salir"
+
+#: src/anchor/gui/pages.py:142
+msgid "Coming up"
+msgstr "Próximos horarios"
+
+#: src/anchor/gui/pages.py:152
+msgid "Today"
+msgstr "Hoy"
+
+#: src/anchor/gui/pages.py:202
+msgid "Websites"
+msgstr "Webs"
+
+#: src/anchor/gui/pages.py:203
+msgid "Mode"
+msgstr "Modo"
+
+#: src/anchor/gui/pages.py:204
+#: src/anchor/gui/start.py:168
+msgid "Blocklist"
+msgstr "Lista negra"
+
+#: src/anchor/gui/pages.py:204
+#: src/anchor/gui/start.py:168
+msgid "Allowlist"
+msgstr "Lista blanca"
+
+#: src/anchor/gui/pages.py:224
+msgid "Categories"
+msgstr "Categorías"
+
+#: src/anchor/gui/pages.py:224
+msgid "Websites and apps that go together"
+msgstr "Webs y apps asociadas"
+
+#: src/anchor/gui/pages.py:231
+msgid "Your own domains"
+msgstr "Dominios propios"
+
+#: src/anchor/gui/pages.py:233
+msgid "Add a domain"
+msgstr "Añadir dominio"
+
+#: src/anchor/gui/pages.py:247
+msgid "Remove {domain}"
+msgstr "Quitar {domain}"
+
+#: src/anchor/gui/pages.py:265
+msgid "Applications"
+msgstr "Aplicaciones"
+
+#: src/anchor/gui/pages.py:266
+msgid "Tick the installed applications that will be closed"
+msgstr "Marca las apps instaladas que se cerrarán"
+
+#: src/anchor/gui/pages.py:269
+msgid "No applications were found on this machine."
+msgstr "No se ha encontrado ninguna aplicación en esta máquina."
+
+#: src/anchor/gui/pages.py:288
+msgid "Pattern"
+msgstr "Ritmo"
+
+#: src/anchor/gui/pages.py:292
+msgid "Type"
+msgstr "Tipo"
+
+#: src/anchor/gui/pages.py:296
+msgid "Hardness"
+msgstr "Dureza"
+
+#: src/anchor/gui/pages.py:332
+msgid "Schedules"
+msgstr "Horarios"
+
+#: src/anchor/gui/pages.py:338
+msgid "New schedule"
+msgstr "Nuevo horario"
+
+#: src/anchor/gui/pages.py:378
+msgid "What it covers"
+msgstr "Qué incluye"
+
+#: src/anchor/gui/pages.py:385
+msgid "Remove {entry}"
+msgstr "Quitar {entry}"
+
+#: src/anchor/gui/pages.py:493
+msgid "Settings"
+msgstr "Ajustes"
+
+#: src/anchor/gui/pages.py:500
+msgid "Show the introduction again"
+msgstr "Ver la introducción otra vez"
+
+#: src/anchor/gui/pages.py:501
+msgid "Including the live test that proves blocking works."
+msgstr "Incluida la prueba en vivo que demuestra que el bloqueo funciona."
+
+#: src/anchor/gui/pages.py:503
+msgid "Show"
+msgstr "Ver"
+
+#: src/anchor/gui/profiles.py:137
+msgid "An allowlist blocks everything it does not name, so turning it back into a blocklist would unblock the rest of the web."
+msgstr "Una lista blanca bloquea todo lo que no nombra, así que convertirla de nuevo en lista negra desbloquearía el resto de la web."
+
+#: src/anchor/gui/profiles.py:144
+msgid "An allowlist blocks all of the web except what you add. Many sites load parts of themselves from other domains and will need entries of their own."
+msgstr "La lista blanca bloquea toda la web salvo lo que añadas. Muchas webs cargan partes de sí mismas desde otros dominios y necesitarán sus propias entradas."
+
+#: src/anchor/gui/profiles.py:153
+msgid "Adding to an allowlist would unblock a site, which a session refuses."
+msgstr "Añadir a una lista blanca desbloquearía una web, y una sesión no lo permite."
+
+#: src/anchor/gui/profiles.py:167
+msgid "A session is using this profile, so it can only be made stricter."
+msgstr "Una sesión está usando este perfil, así que solo se puede hacer más estricto."
+
+#: src/anchor/gui/profiles.py:190
+msgid "A session cannot stop blocking a category it is blocking."
+msgstr "Una sesión no puede dejar de bloquear una categoría que está bloqueando."
+
+#: src/anchor/gui/profiles.py:210
+msgid "A domain cannot be unblocked during a session."
+msgstr "Un dominio no se puede desbloquear durante una sesión."
+
+#: src/anchor/gui/profiles.py:243
+msgid "Already blocked by {category}"
+msgstr "Ya lo bloquea {category}"
+
+#: src/anchor/gui/profiles.py:250
+msgid "A session cannot stop blocking an application it is blocking."
+msgstr "Una sesión no puede dejar de bloquear una aplicación que está bloqueando."
+
+#: src/anchor/gui/profiles.py:264
+msgid "Custom"
+msgstr "Propio"
+
+#: src/anchor/gui/profiles.py:280
+#: src/anchor/gui/start.py:250
+msgid "Notification"
+msgstr "Notificación"
+
+#: src/anchor/gui/profiles.py:281
+msgid "A message, and nothing in your way."
+msgstr "Un aviso, y nada que te estorbe."
+
+#: src/anchor/gui/profiles.py:285
+#: src/anchor/gui/start.py:249
+msgid "Fullscreen"
+msgstr "Pantalla completa"
+
+#: src/anchor/gui/profiles.py:286
+msgid "A countdown on every monitor."
+msgstr "Una cuenta atrás en cada monitor."
+
+#: src/anchor/gui/profiles.py:296
+#: src/anchor/gui/start.py:244
+msgid "Flexible"
+msgstr "Flexible"
+
+#: src/anchor/gui/profiles.py:297
+msgid "You can skip it, or postpone it as often as you like."
+msgstr "Puedes saltártelo, o posponerlo tantas veces como quieras."
+
+#: src/anchor/gui/profiles.py:301
+#: src/anchor/gui/start.py:245
+msgid "Moderate"
+msgstr "Moderado"
+
+#: src/anchor/gui/profiles.py:302
+msgid "No skipping. It can be postponed once, by five minutes."
+msgstr "No se puede saltar. Se puede posponer una vez, cinco minutos."
+
+#: src/anchor/gui/profiles.py:306
+#: src/anchor/gui/start.py:246
+msgid "Mandatory"
+msgstr "Obligatorio"
+
+#: src/anchor/gui/profiles.py:307
+msgid "Neither skipping nor postponing."
+msgstr "Ni saltar ni posponer."
+
+#: src/anchor/gui/profiles.py:318
+msgid "Blocked sites reachable during breaks"
+msgstr "Webs bloqueadas accesibles en el descanso"
+
+#: src/anchor/gui/profiles.py:319
+msgid "Applications stay closed either way."
+msgstr "Las aplicaciones siguen cerradas igualmente."
+
+#: src/anchor/gui/profiles.py:322
+msgid "This cannot be turned on while a session is running."
+msgstr "Esto no se puede activar mientras hay una sesión."
+
+#: src/anchor/gui/schedules.py:39
+msgid "Mon"
+msgstr "Lun"
+
+#: src/anchor/gui/schedules.py:40
+msgid "Tue"
+msgstr "Mar"
+
+#: src/anchor/gui/schedules.py:41
+msgid "Wed"
+msgstr "Mié"
+
+#: src/anchor/gui/schedules.py:42
+msgid "Thu"
+msgstr "Jue"
+
+#: src/anchor/gui/schedules.py:43
+msgid "Fri"
+msgstr "Vie"
+
+#: src/anchor/gui/schedules.py:44
+msgid "Sat"
+msgstr "Sáb"
+
+#: src/anchor/gui/schedules.py:45
+msgid "Sun"
+msgstr "Dom"
+
+#: src/anchor/gui/schedules.py:151
+msgid "Skip the running session ({left} left)"
+msgstr "Saltar la sesión activa (quedan {left})"
+
+#: src/anchor/gui/schedules.py:153
+msgid "Schedules are edited freely while they are not running. A running session can only be skipped, up to three times a week."
+msgstr "Los horarios se editan libremente mientras no están activos. Una sesión activa solo se puede saltar, hasta 3 veces por semana."
+
+#: src/anchor/gui/schedules.py:198
+msgid "This schedule is running now. It can be skipped, not changed."
+msgstr "Este horario está activo ahora. Se puede saltar, no cambiar."
+
+#: src/anchor/gui/schedules.py:252
+msgid "Nothing is running."
+msgstr "No hay nada en marcha."
+
+#: src/anchor/gui/schedules.py:254
+msgid "This session was started by hand. Skipping is for scheduled ones."
+msgstr "Esta sesión la empezaste a mano. Saltar es para las de horario."
+
+#: src/anchor/gui/schedules.py:256
+msgid "A Strict scheduled session cannot be skipped. Only its valve applies."
+msgstr "Una sesión estricta de horario no se puede saltar. Solo vale su válvula."
+
+#: src/anchor/gui/settings.py:101
+msgid "This decides how hard the running session is to leave, and that was settled when it started."
+msgstr "Esto decide lo difícil que es salir de la sesión en marcha, y eso quedó fijado al empezarla."
+
+#: src/anchor/gui/settings.py:114
+msgid "A session is running, so the two exit settings cannot change."
+msgstr "Hay una sesión en marcha, así que los dos ajustes de salida no se pueden cambiar."
+
+#: src/anchor/gui/settings.py:116
+msgid "Statistics"
+msgstr "Estadísticas"
+
+#: src/anchor/gui/settings.py:117
+#: src/anchor/gui/stats.py:132
+msgid "Delete all statistics"
+msgstr "Borrar todas las estadísticas"
+
+#: src/anchor/gui/settings.py:118
+#: src/anchor/gui/stats.py:133
+msgid "This deletes everything Anchor has recorded. It cannot be undone: Anchor keeps no copy, because a private record that survives its own deletion is not private."
+msgstr "Esto borra todo lo que Anchor ha registrado. No se puede deshacer: Anchor no guarda ninguna copia, porque un registro privado que sobrevive a su propio borrado no es privado."
+
+#: src/anchor/gui/settings.py:140
+msgid "Firm session wait"
+msgstr "Espera del nivel firme"
+
+#: src/anchor/gui/settings.py:141
+msgid "Random phrase length"
+msgstr "Longitud de la frase aleatoria"
+
+#: src/anchor/gui/settings.py:142
+msgid "Keep statistics for"
+msgstr "Guardar estadísticas durante"
+
+#: src/anchor/gui/settings.py:143
+msgid "Language"
+msgstr "Idioma"
+
+#: src/anchor/gui/settings.py:157
+msgid "Follow the desktop"
+msgstr "Seguir al escritorio"
+
+#: src/anchor/gui/settings.py:158
+msgid "English"
+msgstr "Inglés"
+
+#: src/anchor/gui/settings.py:159
+msgid "Spanish"
+msgstr "Español"
+
+#: src/anchor/gui/settings.py:187
+msgid "{n} characters"
+msgstr "{n} caracteres"
+
+#: src/anchor/gui/settings.py:190
+msgid "1 day"
+msgstr "1 día"
+
+#: src/anchor/gui/settings.py:190
+msgid "{n} days"
+msgstr "{n} días"
+
+#: src/anchor/gui/start.py:130
+msgid "Maximum at start: {duration}"
+msgstr "Máximo al empezar: {duration}"
+
+#: src/anchor/gui/start.py:136
+msgid "Change it in the profile"
+msgstr "Cambiar en el perfil"
+
+#: src/anchor/gui/start.py:175
+msgid "1 category"
+msgstr "1 categoría"
+
+#: src/anchor/gui/start.py:175
+msgid "{n} categories"
+msgstr "{n} categorías"
+
+#: src/anchor/gui/start.py:177
+msgid "1 domain"
+msgstr "1 dominio"
+
+#: src/anchor/gui/start.py:177
+msgid "{n} domains"
+msgstr "{n} dominios"
+
+#: src/anchor/gui/start.py:192
+msgid "Ends today at {time}"
+msgstr "Termina hoy a las {time}"
+
+#: src/anchor/gui/start.py:194
+msgid "Ends tomorrow at {time}"
+msgstr "Termina mañana a las {time}"
+
+#: src/anchor/gui/start.py:195
+msgid "Ends on {date} at {time}"
+msgstr "Termina el {date} a las {time}"
+
+#: src/anchor/gui/start.py:204
+msgid "Cancel after a 5 min wait. Lists stay editable."
+msgstr "Cancelar tras 5 min de espera. Listas editables."
+
+#: src/anchor/gui/start.py:209
+msgid "Cancel with a long wait and a typed text. You may only add sites."
+msgstr "Cancelar con espera larga y texto. Solo añadir sitios."
+
+#: src/anchor/gui/start.py:214
+msgid "No cancelling. The valve is the only way out. Blocks VPN and Tor."
+msgstr "Sin cancelación. Solo válvula. Bloquea VPN y Tor."
+
+#: src/anchor/gui/start.py:225
+msgid "You can change your mind and withdraw the request."
+msgstr "Puedes arrepentirte y anular la solicitud."
+
+#: src/anchor/gui/start.py:230
+msgid "Anchor generates a new long phrase every time."
+msgstr "Anchor genera una frase larga nueva cada vez."
+
+#: src/anchor/gui/start.py:232
+msgid "Both"
+msgstr "Ambas"
+
+#: src/anchor/gui/start.py:232
+msgid "The wait, and then the phrase."
+msgstr "La espera, y después la frase."
+
+#: src/anchor/gui/start.py:239
+msgid "No breaks"
+msgstr "Sin descansos"
+
+#: src/anchor/gui/start.py:257
+msgid "{minutes} min every {cycles} cycles"
+msgstr "{minutes} min cada {cycles} ciclos"
+
+#: src/anchor/gui/start.py:265
+msgid "A session started by hand can be at most {duration}."
+msgstr "Una sesión empezada a mano puede durar como mucho {duration}."
+
+#: src/anchor/gui/start.py:269
+msgid "A session must be at least {duration}."
+msgstr "Una sesión debe durar al menos {duration}."
+
+#: src/anchor/gui/start.py:273
+msgid "A Strict session needs a valve, because it cannot be cancelled."
+msgstr "Una sesión estricta necesita una válvula, porque no se puede cancelar."
+
+#: src/anchor/gui/start.py:289
+msgid "Start a {level} session?"
+msgstr "¿Empezar sesión {level}?"
+
+#: src/anchor/gui/start.py:290
+msgid "{profile} profile · {duration}"
+msgstr "Perfil {profile} · {duration}"
+
+#: src/anchor/gui/start.py:293
+msgid "{ends}. You can extend it, never shorten it."
+msgstr "{ends}. Podrás ampliarla, nunca acortarla."
+
+#: src/anchor/gui/start.py:299
+msgid "Back"
+msgstr "Volver"
+
+#: src/anchor/gui/start.py:305
+msgid "You can cancel it after waiting 5 minutes."
+msgstr "Puedes cancelarla tras esperar 5 minutos."
+
+#: src/anchor/gui/start.py:307
+msgid "Cancelling means a long wait and typing a long random text."
+msgstr "Cancelar supone una espera larga y escribir un texto aleatorio largo."
+
+#: src/anchor/gui/start.py:310
+msgid "a 30-minute wait"
+msgstr "una espera de 30 minutos"
+
+#: src/anchor/gui/start.py:311
+msgid "a random phrase"
+msgstr "una frase aleatoria"
+
+#: src/anchor/gui/start.py:312
+msgid "a 30-minute wait and then a random phrase"
+msgstr "una espera de 30 minutos y después una frase aleatoria"
+
+#: src/anchor/gui/start.py:313
+msgid "the emergency valve"
+msgstr "la válvula de emergencia"
+
+#: src/anchor/gui/start.py:314
+msgid "It cannot be cancelled. The only way out is {valve}."
+msgstr "No se puede cancelar. La única salida es {valve}."
+
+#: src/anchor/gui/start.py:321
+msgid "VPN and Tor are blocked for the whole session."
+msgstr "La VPN y Tor quedan bloqueadas durante toda la sesión."
+
+#: src/anchor/gui/start.py:327
+msgid "{apps} will close in {minutes} minutes. Save your work."
+msgstr "{apps} se cerrarán en {minutes} minutos. Guarda tu trabajo."
+
+#: src/anchor/gui/start.py:336
+msgid "This profile allows a list and blocks everything except it. Many sites load parts of themselves from other domains and will need entries of their own."
+msgstr "Este perfil permite una lista y bloquea todo lo demás. Muchas webs cargan partes de sí mismas desde otros dominios y necesitarán sus propias entradas."
+
+#: src/anchor/gui/start.py:347
+msgid "{first} and {last}"
+msgstr "{first} y {last}"
+
+#: src/anchor/gui/stats.py:107
+msgid "Day"
+msgstr "Día"
+
+#: src/anchor/gui/stats.py:108
+msgid "Week"
+msgstr "Semana"
+
+#: src/anchor/gui/stats.py:109
+msgid "Month"
+msgstr "Mes"
+
+#: src/anchor/gui/stats.py:115
+msgid "Focus hours"
+msgstr "Horas de foco"
+
+#: src/anchor/gui/stats.py:118
+msgid "Sessions completed"
+msgstr "Sesiones completadas"
+
+#: src/anchor/gui/stats.py:121
+#: src/anchor/gui/stats.py:131
+msgid "Ruptures"
+msgstr "Rupturas"
+
+#: src/anchor/gui/stats.py:124
+msgid "Focus hours per day"
+msgstr "Horas de foco por día"
+
+#: src/anchor/gui/stats.py:126
+msgid "Blocked attempts by domain"
+msgstr "Intentos bloqueados por dominio"
+
+#: src/anchor/gui/stats.py:127
+msgid "Nothing was refused in this period."
+msgstr "No se rechazó nada en este periodo."
+
+#: src/anchor/gui/stats.py:151
+msgid "{day} {month} {year}"
+msgstr "{day} de {month} de {year}"
+
+#: src/anchor/gui/stats.py:153
+msgid "{first}–{last} {month} {year}"
+msgstr "{first}–{last} de {month} de {year}"
+
+#: src/anchor/gui/stats.py:157
+msgid "{first} {first_month} – {last} {last_month} {year}"
+msgstr "{first} de {first_month} – {last} de {last_month} de {year}"
+
+#: src/anchor/gui/stats.py:175
+msgid "January"
+msgstr "enero"
+
+#: src/anchor/gui/stats.py:176
+msgid "February"
+msgstr "febrero"
+
+#: src/anchor/gui/stats.py:177
+msgid "March"
+msgstr "marzo"
+
+#: src/anchor/gui/stats.py:178
+msgid "April"
+msgstr "abril"
+
+#: src/anchor/gui/stats.py:179
+msgid "May"
+msgstr "mayo"
+
+#: src/anchor/gui/stats.py:180
+msgid "June"
+msgstr "junio"
+
+#: src/anchor/gui/stats.py:181
+msgid "July"
+msgstr "julio"
+
+#: src/anchor/gui/stats.py:182
+msgid "August"
+msgstr "agosto"
+
+#: src/anchor/gui/stats.py:183
+msgid "September"
+msgstr "septiembre"
+
+#: src/anchor/gui/stats.py:184
+msgid "October"
+msgstr "octubre"
+
+#: src/anchor/gui/stats.py:185
+msgid "November"
+msgstr "noviembre"
+
+#: src/anchor/gui/stats.py:186
+msgid "December"
+msgstr "diciembre"
+
+#: src/anchor/gui/stats.py:248
+msgid "{name} (app)"
+msgstr "{name} (app)"
+
+#: src/anchor/gui/stats.py:264
+msgid "taken"
+msgstr "tomados"
+
+#: src/anchor/gui/stats.py:265
+msgid "postponed"
+msgstr "pospuestos"
+
+#: src/anchor/gui/stats.py:266
+msgid "skipped"
+msgstr "saltados"
+
+#: src/anchor/gui/stats.py:276
+msgid "valves used"
+msgstr "válvulas usadas"
+
+#: src/anchor/gui/stats.py:277
+msgid "schedules skipped"
+msgstr "horarios saltados"
+
+#: src/anchor/gui/stats.py:278
+msgid "tampering"
+msgstr "manipulaciones"

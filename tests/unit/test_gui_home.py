@@ -277,3 +277,81 @@ class TestWhenTheEngineIsNotThere:
         """Blanking it would read as "your session ended", which is a lie."""
         home = view(connected=False)
         assert home.session is not None
+
+
+class TestReadableNumbers:
+    """Lines a person glances at, not a stopwatch."""
+
+    def test_a_break_an_hour_off_is_rounded_to_minutes(self) -> None:
+        far = status(**{"break": {**status()["break"], "remaining_seconds": 2996.0}})
+        card = home_view(far, schedules=schedules(), stats=stats()).session
+        assert card is not None
+        assert card.break_when == "in 50 min"
+
+    def test_the_last_minute_keeps_its_seconds(self) -> None:
+        close = status(**{"break": {**status()["break"], "remaining_seconds": 45.0}})
+        card = home_view(close, schedules=schedules(), stats=stats()).session
+        assert card is not None
+        assert card.break_when == "in 45 s"
+
+    def test_a_refused_application_is_named_the_way_its_menu_names_it(self) -> None:
+        refused = stats(
+            attempts_by_target=[{"target": "discord.desktop", "kind": "app", "count": 3}]
+        )
+        card = home_view(
+            status(),
+            schedules=schedules(),
+            stats=refused,
+            apps={"discord.desktop": "Discord"},
+        ).session
+        assert card is not None
+        assert card.attempts_detail == "Discord"
+
+    def test_one_that_is_not_installed_still_reads_as_a_name(self) -> None:
+        """Never the raw identifier on a line that otherwise holds websites."""
+        refused = stats(
+            attempts_by_target=[{"target": "discord.desktop", "kind": "app", "count": 3}]
+        )
+        card = home_view(status(), schedules=schedules(), stats=refused).session
+        assert card is not None
+        assert card.attempts_detail == "Discord"
+
+
+class TestWhatIsComingUp:
+    def test_today_comes_before_the_weekend(self) -> None:
+        """Sorting by clock time alone puts Saturday's ten before today's four."""
+        listing = {
+            "schedules": [
+                {
+                    "id": "a",
+                    "name": "Weekend",
+                    "days": [5, 6],
+                    "start": "10:00",
+                    "end": "12:00",
+                    "level": "soft",
+                    "enabled": True,
+                    "active": False,
+                },
+                {
+                    "id": "b",
+                    "name": "Work",
+                    "days": [0],
+                    "start": "16:00",
+                    "end": "19:00",
+                    "level": "strict",
+                    "enabled": True,
+                    "active": False,
+                },
+            ],
+            "skips_remaining": 3,
+        }
+        home = home_view({"active": False}, schedules=listing, stats=stats(), today=0)
+        assert [line.name for line in home.schedules] == ["Work", "Weekend"]
+
+    def test_the_one_running_now_is_first_of_all(self) -> None:
+        listing = schedules()
+        listing["schedules"][0]["active"] = True
+        listing["schedules"][1]["active"] = False
+        home = home_view({"active": False}, schedules=listing, stats=stats(), today=0)
+        assert home.schedules[0].name == "Work"
+        assert home.schedules[0].when.startswith("Now")

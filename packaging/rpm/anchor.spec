@@ -51,6 +51,9 @@ for category in data/categories/*.toml; do
   install -Dpm 0644 "$category" %{buildroot}%{_datadir}/anchor/categories/"$(basename "$category")"
 done
 
+install -Dpm 0644 data/applications/org.anchor.Anchor.desktop \
+  %{buildroot}%{_datadir}/applications/org.anchor.Anchor.desktop
+
 install -d %{buildroot}%{_sysconfdir}/anchor
 # Where the user's own categories go, replacing shipped ones by name (SPEC 12).
 install -d %{buildroot}%{_sysconfdir}/anchor/categories
@@ -85,6 +88,8 @@ fi
 %{_bindir}/anchor
 %{_bindir}/anchord
 %{_bindir}/anchor-blockerd
+%{_bindir}/anchor-agent
+%{_bindir}/anchor-gui
 %{_unitdir}/anchord.service
 %{_unitdir}/anchor-blockerd.service
 %{_userunitdir}/anchor-agent.service
@@ -93,6 +98,7 @@ fi
 %{_datadir}/anchor/doh-domains.txt
 %{_datadir}/anchor/tunnels.txt
 %{_datadir}/anchor/categories/*.toml
+%{_datadir}/applications/org.anchor.Anchor.desktop
 %dir %{_sysconfdir}/anchor
 %dir %{_sysconfdir}/anchor/categories
 %dir %attr(0750,root,root) %{_sharedstatedir}/anchor

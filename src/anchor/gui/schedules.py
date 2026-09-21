@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any, Final
 
-from anchor.gui.i18n import _
+from anchor.gui.i18n import N_, _
 from anchor.protocol.types import Level, SessionOrigin
 
 MINUTES_IN_A_DAY: Final = 24 * 60
@@ -33,8 +33,17 @@ SKIPS_PER_WEEK: Final = 3
 #: What the axis shows when there is nothing to show: an ordinary working day.
 EMPTY_AXIS: Final = (8 * 60, 20 * 60)
 
-#: Monday first, as SPEC 11 counts the week.
-DAY_NAMES: Final = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+#: Monday first, as SPEC 11 counts the week. Marked here and translated where
+#: they are used, because an index into a tuple tells an extractor nothing.
+DAY_NAMES: Final = (
+    N_("Mon"),
+    N_("Tue"),
+    N_("Wed"),
+    N_("Thu"),
+    N_("Fri"),
+    N_("Sat"),
+    N_("Sun"),
+)
 DAY_KEYS: Final = (
     "monday",
     "tuesday",

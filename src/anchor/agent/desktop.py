@@ -23,7 +23,8 @@ import logging
 import os
 from typing import Any
 
-from anchor.agent.indicator import IndicatorView
+from anchor.agent import menu
+from anchor.agent.indicator import IndicatorView, MenuItem
 from anchor.agent.notifications import Notification
 
 log = logging.getLogger("anchor-agent")
@@ -32,6 +33,9 @@ WATCHER_NAME = "org.kde.StatusNotifierWatcher"
 WATCHER_PATH = "/StatusNotifierWatcher"
 ITEM_INTERFACE = "org.kde.StatusNotifierItem"
 ITEM_PATH = "/StatusNotifierItem"
+
+MENU_INTERFACE = "com.canonical.dbusmenu"
+MENU_PATH = "/MenuBar"
 
 NOTIFICATIONS_NAME = "org.freedesktop.Notifications"
 NOTIFICATIONS_PATH = "/org/freedesktop/Notifications"
@@ -117,6 +121,56 @@ def signals_for(before: IndicatorView, after: IndicatorView) -> list[tuple[str, 
 def status_word(view: IndicatorView) -> str:
     """``Active`` while a session runs, ``Passive`` when the item is hidden."""
     return "Active" if view.visible else "Passive"
+
+
+#: The menu interface, as the panels that read it expect to find it. Only the
+#: methods a panel actually calls are here; the rest of the specification is
+#: optional and nothing implements all of it.
+MENU_XML = """
+<node>
+  <interface name="com.canonical.dbusmenu">
+    <property name="Version" type="u" access="read"/>
+    <property name="TextDirection" type="s" access="read"/>
+    <property name="Status" type="s" access="read"/>
+    <property name="IconThemePath" type="as" access="read"/>
+    <method name="GetLayout">
+      <arg type="i" name="parentId" direction="in"/>
+      <arg type="i" name="recursionDepth" direction="in"/>
+      <arg type="as" name="propertyNames" direction="in"/>
+      <arg type="u" name="revision" direction="out"/>
+      <arg type="(ia{sv}av)" name="layout" direction="out"/>
+    </method>
+    <method name="GetGroupProperties">
+      <arg type="ai" name="ids" direction="in"/>
+      <arg type="as" name="propertyNames" direction="in"/>
+      <arg type="a(ia{sv})" name="properties" direction="out"/>
+    </method>
+    <method name="GetProperty">
+      <arg type="i" name="id" direction="in"/>
+      <arg type="s" name="name" direction="in"/>
+      <arg type="v" name="value" direction="out"/>
+    </method>
+    <method name="Event">
+      <arg type="i" name="id" direction="in"/>
+      <arg type="s" name="eventId" direction="in"/>
+      <arg type="v" name="data" direction="in"/>
+      <arg type="u" name="timestamp" direction="in"/>
+    </method>
+    <method name="AboutToShow">
+      <arg type="i" name="id" direction="in"/>
+      <arg type="b" name="needUpdate" direction="out"/>
+    </method>
+    <signal name="LayoutUpdated">
+      <arg type="u" name="revision"/>
+      <arg type="i" name="parent"/>
+    </signal>
+    <signal name="ItemsPropertiesUpdated">
+      <arg type="a(ia{sv})" name="updatedProps"/>
+      <arg type="a(ias)" name="removedProps"/>
+    </signal>
+  </interface>
+</node>
+"""
 
 
 class DesktopUnavailableError(RuntimeError):
@@ -301,11 +355,12 @@ class TrayItem:
             case "IconThemePath":
                 return glib.Variant("s", "")
             case "ItemIsMenu":
-                # False, so a click reaches Activate rather than waiting for a
-                # menu. The menu itself arrives with the interface (ADR 3).
+                # False, so a left click reaches Activate and opens the
+                # interface. The menu is still there on a right click, which
+                # is what every other tray item on the desktop does.
                 return glib.Variant("b", False)
             case "Menu":
-                return glib.Variant("o", "/MenuBar")
+                return glib.Variant("o", MENU_PATH)
             case "ToolTip":
                 return glib.Variant("(sa(iiay)ss)", (view.icon, [], view.title, view.tooltip))
             case "XAyatanaLabel":
@@ -330,6 +385,161 @@ class TrayItem:
             except Exception:
                 log.exception("the activation handler raised")
         invocation.return_value(None)
+
+
+class TrayMenu:
+    """The indicator's menu, exported ourselves (SPEC 14.1, ADR 3).
+
+    What the menu says is decided in :mod:`anchor.agent.indicator` and
+    arranged in :mod:`anchor.agent.menu`; this answers the panel's questions
+    about it and turns a click back into an action.
+
+    The revision number is the whole protocol in one integer: a panel caches
+    the layout and only asks again when told the revision moved, so a menu
+    that changes without saying so is a menu that never changes on screen.
+    """
+
+    def __init__(self, connection: Any = None, *, on_action: Any = None) -> None:
+        self._gio, self._glib = _gi()
+        self._connection = connection if connection is not None else session_bus()
+        self._on_action = on_action
+        self._items: tuple[MenuItem, ...] = ()
+        self._revision = 1
+        self._registration: int | None = None
+
+    def start(self) -> None:
+        node = self._gio.DBusNodeInfo.new_for_xml(MENU_XML)
+        self._registration = self._connection.register_object(
+            MENU_PATH, node.interfaces[0], self._call, self._get_property, None
+        )
+
+    def stop(self) -> None:
+        if self._registration is not None:
+            self._connection.unregister_object(self._registration)
+            self._registration = None
+
+    def show(self, items: tuple[MenuItem, ...]) -> None:
+        """Take a new menu, and tell the panel only if it really changed."""
+        if items == self._items:
+            return
+        self._items = items
+        self._revision += 1
+        try:
+            self._connection.emit_signal(
+                None,
+                MENU_PATH,
+                MENU_INTERFACE,
+                "LayoutUpdated",
+                self._glib.Variant("(ui)", (self._revision, menu.ROOT_ID)),
+            )
+        except self._glib.Error as error:
+            log.debug("could not announce the menu: %s", error.message)
+
+    # -- what the panel asks ---------------------------------------------
+
+    def _get_property(
+        self, _connection: Any, _sender: str, _path: str, _interface: str, name: str
+    ) -> Any:
+        glib = self._glib
+        match name:
+            case "Version":
+                return glib.Variant("u", menu.VERSION)
+            case "TextDirection":
+                return glib.Variant("s", "ltr")
+            case "Status":
+                return glib.Variant("s", "normal")
+            case "IconThemePath":
+                return glib.Variant("as", [])
+        return None
+
+    def _call(
+        self,
+        _connection: Any,
+        _sender: str,
+        _path: str,
+        _interface: str,
+        method: str,
+        parameters: Any,
+        invocation: Any,
+    ) -> None:
+        glib = self._glib
+        arguments = parameters.unpack() if parameters is not None else ()
+
+        match method:
+            case "GetLayout":
+                root, properties, children = menu.layout_for(self._items)
+                layout = glib.Variant(
+                    "(ia{sv}av)",
+                    (
+                        root,
+                        _variants(glib, properties),
+                        [
+                            glib.Variant("(ia{sv}av)", (index, _variants(glib, props), []))
+                            for index, props, _ in children
+                        ],
+                    ),
+                )
+                invocation.return_value(glib.Variant("(u(ia{sv}av))", (self._revision, layout)))
+                return
+
+            case "GetGroupProperties":
+                wanted = list(arguments[0]) if arguments else []
+                invocation.return_value(
+                    glib.Variant(
+                        "(a(ia{sv}))",
+                        (
+                            [
+                                (index, _variants(glib, props))
+                                for index, props in menu.group_properties(self._items, wanted)
+                            ],
+                        ),
+                    )
+                )
+                return
+
+            case "GetProperty":
+                item_id, name = int(arguments[0]), str(arguments[1])
+                for index, props in menu.group_properties(self._items, [item_id]):
+                    if index == item_id and name in props:
+                        invocation.return_value(glib.Variant("(v)", (_variant(glib, props[name]),)))
+                        return
+                invocation.return_value(glib.Variant("(v)", (glib.Variant("s", ""),)))
+                return
+
+            case "Event":
+                if str(arguments[1]) == "clicked":
+                    self._clicked(int(arguments[0]))
+                invocation.return_value(None)
+                return
+
+            case "AboutToShow":
+                # Nothing to prepare: the menu is rebuilt on every tick, so it
+                # is never older than a second when the panel opens it.
+                invocation.return_value(glib.Variant("(b)", (False,)))
+                return
+
+        invocation.return_value(None)
+
+    def _clicked(self, item_id: int) -> None:
+        action = menu.action_at(self._items, item_id)
+        if not action or self._on_action is None:
+            return
+        try:
+            self._on_action(action)
+        except Exception:
+            log.exception("the menu handler raised for %r", action)
+
+
+def _variants(glib: Any, properties: dict[str, Any]) -> dict[str, Any]:
+    return {key: _variant(glib, value) for key, value in properties.items()}
+
+
+def _variant(glib: Any, value: Any) -> Any:
+    if isinstance(value, bool):
+        return glib.Variant("b", value)
+    if isinstance(value, int):
+        return glib.Variant("i", value)
+    return glib.Variant("s", str(value))
 
 
 class DesktopNotifier:
