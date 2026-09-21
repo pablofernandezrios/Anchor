@@ -20,6 +20,7 @@ from typing import Any
 from anchor import __version__
 from anchor.cli.client import EngineClient, EngineUnreachableError
 from anchor.cli.durations import DurationError, format_countdown, format_duration, parse_duration
+from anchor.engine.doctor import Check, indicator_check, worst
 from anchor.engine.paths import Paths
 from anchor.protocol.errors import ErrorCode
 from anchor.protocol.messages import Response
@@ -219,6 +220,8 @@ def build_parser() -> argparse.ArgumentParser:
     schedule_delete = schedule_actions.add_parser("delete", help="Remove a schedule.")
     schedule_delete.add_argument("id")
 
+    commands.add_parser("doctor", help="Check that Anchor can do its job, and say how to fix it.")
+
     config = commands.add_parser("config", help="The settings Anchor keeps for you.")
     config_actions = _Commands(config.add_subparsers(dest="action", required=True), common)
     config_get = config_actions.add_parser("get", help="Show a setting, or all of them.")
@@ -363,6 +366,9 @@ def _request_for(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
 
         case "break":
             return f"break.{args.action}", {}
+
+        case "doctor":
+            return "doctor.run", {}
 
         case "config":
             if args.action == "set":
@@ -524,8 +530,46 @@ def _render(args: argparse.Namespace, result: dict[str, Any]) -> int:
     if args.command == "config":
         _render_config(args, result)
         return EXIT_OK
+    if args.command == "doctor":
+        return _render_doctor(result, _look_for_a_watcher())
     _render_status(result)
     return EXIT_OK
+
+
+def _look_for_a_watcher() -> bool | None:
+    """Is there a panel to show the indicator (SPEC 14.1)?
+
+    Asked here rather than by the engine: the panel lives on the user's
+    session bus, and the engine runs outside it. A machine with no PyGObject
+    answers ``None``, which is "nobody could look", not "there is nothing".
+    """
+    try:
+        from anchor.agent.desktop import watcher_running
+    except ImportError:  # pragma: no cover - PyGObject absent is handled below
+        return None
+    return watcher_running()
+
+
+def _render_doctor(result: dict[str, Any], indicator: bool | None) -> int:
+    """Every check, its detail, and what to type (SPEC 15)."""
+    checks = [Check(**raw) for raw in result.get("checks", [])]
+    # The engine could not see the panel, so this client answers that one.
+    checks = [indicator_check(indicator) if one.name == "indicator" else one for one in checks]
+
+    for one in checks:
+        mark = "ok" if one.ok else ("problem" if one.blocking else "note")
+        print(f"[{mark:^7}] {one.title}")
+        print(f"          {one.detail}")
+        if one.fix and not one.ok:
+            print(f"          Try: {one.fix}")
+
+    verdict = worst(checks)
+    if verdict is None:
+        print("\nNothing wrong here.")
+        return EXIT_OK
+    failed = [one for one in checks if not one.ok]
+    print(f"\n{len(failed)} thing(s) to look at.")
+    return EXIT_ERROR if verdict == "problem" else EXIT_OK
 
 
 def _render_config(args: argparse.Namespace, result: dict[str, Any]) -> None:

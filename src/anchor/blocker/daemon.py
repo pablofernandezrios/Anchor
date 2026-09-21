@@ -115,6 +115,7 @@ class BlockerDaemon:
 
         self._policy: Policy | None = None
         self._applied = False
+        self._looked_for_leftovers = False
         self._blocking_tunnels = False
         self._network = NetworkState()
         self._lock = threading.Lock()
@@ -270,6 +271,40 @@ class BlockerDaemon:
         self.stop_enforcing()
         if self._applied:
             self.undo()
+            return
+        self.forget_leftovers()
+
+    def forget_leftovers(self) -> bool:
+        """Clear blocks that outlived the daemon that applied them (P4).
+
+        A SIGKILL, a power cut or an upgrade in the middle of a session leaves
+        the nftables table loaded and the managed browser policies written.
+        The session is over, nobody is watching them, and until a reboot or an
+        `anchor-blockerd --restore` the machine is being blocked by nothing.
+        Anchor's promise is that it fails open, so this closes the one hole
+        where it did not.
+
+        Looked for once, when the engine first says no session is running, and
+        never again: `nft` once at startup is nothing, and once a second for
+        the rest of the login is a process a second forever. A daemon that
+        restarts into a live session never reaches this, because the poll that
+        reports a session returns before it.
+        """
+        if self._looked_for_leftovers or self._applied:
+            # Blocks this daemon applied are undone by the ordinary path,
+            # which knows what it wrote and what to put back.
+            return False
+        self._looked_for_leftovers = True
+
+        if not rules_loaded(runner=self.runner):
+            return False
+
+        log.warning(
+            "found Anchor's firewall table loaded with no session running; "
+            "something stopped without cleaning up. Undoing it"
+        )
+        self.undo()
+        return True
 
     def check_rules_survive(self) -> None:
         """Notice if Anchor's firewall table has been removed (SPEC 7.6).

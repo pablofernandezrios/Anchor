@@ -27,6 +27,7 @@ from anchor.engine.breaks import advance as advance_breaks
 from anchor.engine.breaks import postpone as postpone_break
 from anchor.engine.breaks import skip as skip_break
 from anchor.engine.categories import Category, load_categories, resolve
+from anchor.engine.doctor import Observer, examine, gather, worst
 from anchor.engine.paths import Paths, Settings
 from anchor.engine.preferences import PREFERENCES, Preferences, describe
 from anchor.engine.profiles import Profile
@@ -98,6 +99,10 @@ class Engine:
         self.categories: dict[str, Category] = {}
         self.schedules: dict[str, Schedule] = {}
         self._sinks: list[EventSink] = []
+        # When anchor-blockerd last asked what to enforce. It is the only way
+        # the engine hears from it at all, which makes it the only liveness
+        # signal there is without asking systemd (SPEC 15).
+        self._blocker_seen: float | None = None
 
         self.stats = Statistics(paths.stats_db, retention_days=settings.retention_days)
 
@@ -391,6 +396,7 @@ class Engine:
             "schedule.edit": self._on_schedule_edit,
             "schedule.delete": self._on_schedule_delete,
             "schedule.skip": self._on_skip,
+            "doctor.run": self._on_doctor,
             "config.get": self._on_config_get,
             "config.set": self._on_config_set,
             "stats.query": self._on_stats_query,
@@ -515,6 +521,9 @@ class Engine:
         them.
         """
         self.tick()
+        # The blocker speaks only when it polls, so this is where its being
+        # alive is recorded (SPEC 15, `anchor doctor`).
+        self._blocker_seen = self.clock.wall()
         session = self.state.session
         if session is None:
             return request.ok({"active": False})
@@ -778,6 +787,28 @@ class Engine:
         """
         self.stats.delete_everything()
         return request.ok({"deleted": True})
+
+    def _on_doctor(self, request: Request) -> Response:
+        """Look at the machine and say what is wrong (SPEC 15).
+
+        The indicator check is missing from this answer on purpose: the panel
+        lives in the user's session and the engine runs outside it, so the
+        client that asked adds that one itself. Guessing from here would be
+        the engine reporting on something it cannot see.
+        """
+        facts = gather(
+            session_active=self.state.session is not None,
+            blocker_last_seen=self._blocker_seen,
+            now=self.clock.wall(),
+            observer=Observer(),
+        )
+        checks = examine(facts)
+        return request.ok(
+            {
+                "checks": [check.to_dict() for check in checks],
+                "verdict": worst(checks),
+            }
+        )
 
     # -- settings ---------------------------------------------------------
 

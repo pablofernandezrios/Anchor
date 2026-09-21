@@ -201,6 +201,49 @@ class TestUndoing:
         assert daemon.attempts.total == 0
 
 
+class TestWhatACrashLeftBehind:
+    """Rules that outlived the daemon that applied them (P4, SPEC 7.6).
+
+    A SIGKILL, a power cut or an upgrade mid-session leaves the nftables
+    table loaded and the browser policies written. The session is over and
+    nothing is watching, so the machine is blocked by nobody — and only a
+    reboot or `anchor-blockerd --restore` clears it. The daemon looks once,
+    when it first hears that no session is running.
+    """
+
+    def test_a_table_left_behind_is_cleared(
+        self, daemon: BlockerDaemon, runner: RecordingRunner
+    ) -> None:
+        # The default runner answers `nft list table` with success, which is
+        # what a leftover table looks like.
+        assert daemon.forget_leftovers() is True
+        assert runner.ran("nft delete table inet anchor")
+
+    def test_a_clean_machine_is_left_alone(self, paths: Path, lists: Lists, tmp_path: Path) -> None:
+        clean = RecordingRunner({"list table": Result(code=1, err="No such file or directory")})
+        daemon = BlockerDaemon(paths, lists=lists, runner=clean, resolver_port=5391)  # type: ignore[arg-type]
+
+        assert daemon.forget_leftovers() is False
+        assert not clean.ran("nft delete table")
+
+    def test_it_only_looks_once(self, daemon: BlockerDaemon, runner: RecordingRunner) -> None:
+        """One `nft` call, not one a second for the rest of the login."""
+        daemon.forget_leftovers()
+        runner.calls.clear()
+
+        assert daemon.forget_leftovers() is False
+        assert runner.calls == []
+
+    def test_blocks_this_daemon_applied_are_not_leftovers(
+        self, daemon: BlockerDaemon, runner: RecordingRunner
+    ) -> None:
+        """Those are undone by the ordinary path, which knows what it wrote."""
+        daemon.apply(WebMode.BLOCKLIST, frozenset({"youtube.com"}))
+        runner.calls.clear()
+
+        assert daemon.forget_leftovers() is False
+
+
 class TestCountingAttempts:
     def test_the_two_halves_of_one_lookup_count_once(self, daemon: BlockerDaemon) -> None:
         """A visit asks for A and AAAA; the indicator should say one."""

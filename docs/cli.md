@@ -344,10 +344,50 @@ $ echo $?
 `retention_days` overrides the machine default in `anchor.toml`, so a choice
 made here is not quietly overruled by a file only root can edit.
 
+### `anchor doctor`
+
+Checks that Anchor can do its job, and prints what to type when it cannot
+(SPEC 15). Five checks: the blocker daemon, the DNS path, the firewall table,
+the browser policies and the top-bar indicator.
+
+```
+$ anchor doctor
+[  ok   ] The blocker daemon
+          Checked in 1 s ago.
+[problem] The DNS path
+          No upstream DNS server could be found, in systemd-resolved or in
+          /etc/resolv.conf. ...
+          Try: Check this machine's network connection, then: resolvectl status
+[  ok   ] The firewall table
+          inet anchor is not loaded.
+[  ok   ] Browser policies
+          Found: Firefox, Chromium.
+[ note  ] The top-bar indicator
+          No StatusNotifierWatcher is running ...
+          Try: Install the AppIndicator extension ...
+
+1 thing(s) to look at.
+```
+
+What counts as healthy depends on whether a session is running. Anchor loads
+its firewall table, points systemd-resolved at its resolver and writes the
+browser policies when a session starts, and undoes all of it when the session
+ends — so a loaded table is right during a session and **wrong** outside one:
+it means something stopped without cleaning up and the machine is being
+blocked by nobody. `anchor-blockerd --restore` clears it, and the blocker now
+clears it by itself the first time it hears that no session is running.
+
+A missing indicator extension is a `note`, not a `problem`: Anchor blocks
+exactly as well without it, and the time left is still on Home and in
+`anchor status`. Exit code 1 for a problem, 0 for notes only.
+
+The indicator check is the one the engine cannot make: the panel lives on the
+user's session bus and the engine runs outside it, so the engine answers
+"could not be checked" and whichever client asked looks for itself.
+
 ### Planned
 
-`anchor category edit` and `anchor doctor` are specified in SPEC 15 and
-arrive with Milestones 9 and 10.
+`anchor category edit` is specified in SPEC 15 and arrives with Milestone 10.
 
 ## Exit codes
 

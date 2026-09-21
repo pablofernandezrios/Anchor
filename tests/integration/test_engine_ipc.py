@@ -20,6 +20,7 @@ from anchor.engine.service import EngineServer
 from anchor.engine.sessions import SessionPolicy
 from anchor.engine.timekeeping import FakeClock
 from anchor.protocol.errors import ErrorCode
+from anchor.protocol.messages import REQUEST_SCHEMAS
 
 HOUR = 3600
 
@@ -217,10 +218,29 @@ def test_an_unknown_request_type_is_rejected(client: EngineClient) -> None:
     assert response.code == ErrorCode.UNKNOWN_TYPE
 
 
-def test_a_registered_but_unbuilt_command_says_so(client: EngineClient) -> None:
+def test_every_request_the_protocol_advertises_has_a_handler(engine: Engine) -> None:
+    """The gap that hid SPEC 11 and SPEC 15 until Milestones 8 and 9.
+
+    A schema with no handler answers NOT_IMPLEMENTED at runtime and looks
+    finished from the outside, which is how `schedule.skip` sat advertised
+    and unbuilt for five milestones.
+    """
+    # events.subscribe is answered by the server, which turns the connection
+    # into a feed; the engine never sees it as an ordinary request.
+    advertised = set(REQUEST_SCHEMAS) - {"events.subscribe"}
+
+    assert advertised <= set(engine._handlers())
+
+
+def test_the_doctor_reports_on_the_machine(client: EngineClient) -> None:
     response = client.call("doctor.run")
-    assert not response.ok
-    assert response.code == ErrorCode.NOT_IMPLEMENTED
+
+    assert response.ok
+    names = {check["name"] for check in response.result["checks"]}
+    # SPEC 15's list, less the indicator: the panel is in the user's session
+    # and the engine cannot see it, so the client adds that one.
+    assert names == {"blocker", "dns", "nftables", "browsers", "indicator"}
+    assert "fix" in response.result["checks"][0]
 
 
 def test_a_stranger_is_turned_away(server: EngineServer) -> None:

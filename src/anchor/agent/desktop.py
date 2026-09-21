@@ -153,6 +153,36 @@ def session_bus() -> Any:
         ) from error
 
 
+def watcher_running() -> bool | None:
+    """Whether anything on the session bus will show a tray item (SPEC 14.1).
+
+    ``None`` means the question could not be asked at all — no PyGObject, no
+    session bus — which is not the same as "no watcher" and must not be
+    reported as one. `anchor doctor` prints the difference.
+    """
+    try:
+        gio, glib = _gi()
+        connection = session_bus()
+    except DesktopUnavailableError:
+        return None
+
+    try:
+        reply = connection.call_sync(
+            "org.freedesktop.DBus",
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "NameHasOwner",
+            glib.Variant("(s)", (WATCHER_NAME,)),
+            glib.VariantType("(b)"),
+            gio.DBusCallFlags.NONE,
+            5000,
+            None,
+        )
+    except glib.Error:
+        return None
+    return bool(reply.unpack()[0])
+
+
 class TrayItem:
     """Anchor's entry in the top bar (SPEC 14.1, ADR 3).
 

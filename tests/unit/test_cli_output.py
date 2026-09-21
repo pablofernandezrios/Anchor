@@ -243,3 +243,100 @@ class TestConfigCommand:
             _render(args, {"key": "language", "value": "es"})
 
         assert "language is now es" in out.getvalue()
+
+
+class TestDoctorCommand:
+    """`anchor doctor` (SPEC 15)."""
+
+    def request(self, *argv: str) -> tuple[str, dict[str, object]]:
+        from anchor.cli.main import _request_for, parse_args
+
+        _parser, args = parse_args(list(argv))
+        return _request_for(args)
+
+    def render(self, result: dict[str, object], present: bool | None = True) -> tuple[int, str]:
+        import contextlib
+        import io
+
+        from anchor.cli.main import _render_doctor
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = _render_doctor(result, present)
+        return code, out.getvalue()
+
+    def reply(self, *checks: dict[str, object]) -> dict[str, object]:
+        return {"checks": list(checks), "verdict": None}
+
+    @property
+    def healthy(self) -> dict[str, object]:
+        return {
+            "name": "blocker",
+            "title": "The blocker daemon",
+            "ok": True,
+            "detail": "Checked in 1 s ago.",
+            "fix": "",
+            "blocking": True,
+        }
+
+    @property
+    def broken(self) -> dict[str, object]:
+        return {
+            "name": "dns",
+            "title": "The DNS path",
+            "ok": False,
+            "detail": "No upstream DNS server could be found.",
+            "fix": "resolvectl status",
+            "blocking": True,
+        }
+
+    def test_it_asks_the_engine(self) -> None:
+        assert self.request("doctor") == ("doctor.run", {})
+
+    def test_a_healthy_machine_says_so_and_exits_zero(self) -> None:
+        code, text = self.render(self.reply(self.healthy))
+
+        assert code == 0
+        assert "The blocker daemon" in text
+        assert "Checked in 1 s ago." in text
+
+    def test_a_problem_prints_the_fix_and_exits_one(self) -> None:
+        # A script that runs this needs to hear about it in the exit code, and
+        # a person needs the command to type.
+        code, text = self.render(self.reply(self.broken))
+
+        assert code == 1
+        assert "resolvectl status" in text
+
+    def test_a_note_is_not_a_failure(self) -> None:
+        """A missing panel extension does not stop Anchor blocking (SPEC 14.1)."""
+        note = dict(self.broken, name="indicator", blocking=False, fix="install it")
+        code, _text = self.render(self.reply(note), present=False)
+
+        assert code == 0
+
+    def test_the_indicator_check_is_answered_here_not_by_the_engine(self) -> None:
+        unchecked = {
+            "name": "indicator",
+            "title": "The top-bar indicator",
+            "ok": True,
+            "detail": "Could not be checked from here.",
+            "fix": "",
+            "blocking": False,
+        }
+        _code, text = self.render(self.reply(unchecked), present=False)
+
+        assert "No StatusNotifierWatcher" in text
+
+    def test_and_stays_unanswered_when_this_client_cannot_look_either(self) -> None:
+        unchecked = {
+            "name": "indicator",
+            "title": "The top-bar indicator",
+            "ok": True,
+            "detail": "Could not be checked from here.",
+            "fix": "",
+            "blocking": False,
+        }
+        _code, text = self.render(self.reply(unchecked), present=None)
+
+        assert "Could not be checked" in text
