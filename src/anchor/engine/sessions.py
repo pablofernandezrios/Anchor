@@ -17,6 +17,7 @@ from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any, Final, Self
 
+from anchor.engine.breaks import BreakState
 from anchor.engine.phrases import DEFAULT_PHRASE_LENGTH, generate_phrase, phrase_matches
 from anchor.engine.timekeeping import Clock, TimeAnchor
 from anchor.protocol.errors import AnchorError, ErrorCode
@@ -151,6 +152,13 @@ class Session:
     valve: Valve | None = None
     phase: SessionPhase = SessionPhase.WORKING
     exit_request: ExitRequest | None = None
+    breaks: BreakState | None = None
+    """Where this session is in its work-and-rest pattern (SPEC 10).
+
+    ``None`` for a session whose profile is no longer installed: the pattern
+    belongs to the profile, and inventing one would be inventing a break.
+    """
+
     blocked_attempts: int = 0
     app_blocks: int = 0
     """Applications closed because this session blocks them (SPEC 13)."""
@@ -271,6 +279,15 @@ class Session:
     def in_phase(self, phase: SessionPhase) -> Session:
         return replace(self, phase=phase)
 
+    def with_breaks(self, state: BreakState) -> Session:
+        """Keep the phase and the break state in step (SPEC 10).
+
+        ``phase`` is what every client renders and what the blocker reads;
+        ``breaks`` is how the engine works it out. Setting one without the
+        other is how they drift, so they are set together.
+        """
+        return replace(self, breaks=state, phase=state.phase)
+
     # -- persistence ----------------------------------------------------
 
     def to_dict(self) -> dict[str, Any]:
@@ -283,6 +300,7 @@ class Session:
             "valve": str(self.valve) if self.valve else None,
             "phase": str(self.phase),
             "exit_request": self.exit_request.to_dict() if self.exit_request else None,
+            "breaks": self.breaks.to_dict() if self.breaks else None,
             "blocked_attempts": self.blocked_attempts,
             "app_blocks": self.app_blocks,
             "ruptures": [rupture.to_dict() for rupture in self.ruptures],
@@ -300,6 +318,7 @@ class Session:
             valve=Valve(raw["valve"]) if raw.get("valve") else None,
             phase=SessionPhase(raw.get("phase", SessionPhase.WORKING)),
             exit_request=ExitRequest.from_dict(exit_raw) if exit_raw else None,
+            breaks=BreakState.from_dict(raw["breaks"]) if raw.get("breaks") else None,
             blocked_attempts=int(raw.get("blocked_attempts", 0)),
             app_blocks=int(raw.get("app_blocks", 0)),
             ruptures=tuple(Rupture.from_dict(item) for item in raw.get("ruptures", ())),

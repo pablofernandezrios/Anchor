@@ -1,12 +1,13 @@
 """What Anchor tells the user, and when (SPEC 7.1, 8.3, 9).
 
-Three moments, all of them specified, and nothing else. A focus tool that
+A few moments, all of them specified, and nothing else. A focus tool that
 chats is a focus tool people turn off, so the agent says something only when
 the specification says it must:
 
 * a site was blocked (SPEC 8.3),
 * applications are about to close, with time to save (SPEC 7.1),
-* an application was closed (SPEC 9).
+* an application was closed (SPEC 9),
+* a break is coming, and a break has begun (SPEC 10, ADR 2).
 
 The ten-minute limit SPEC 8.3 asks for is not applied here. It lives in the
 blocker, which stops counting a domain it has already reported, so by the time
@@ -25,6 +26,8 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any
 
+from anchor.protocol.types import BreakType
+
 
 class Urgency(IntEnum):
     """The freedesktop notification urgencies."""
@@ -38,6 +41,7 @@ class Urgency(IntEnum):
 #: burst of blocked sites leaves one notification and not fifteen.
 BLOCKED_CHANNEL = "blocked-site"
 APPS_CHANNEL = "applications"
+BREAK_CHANNEL = "break"
 
 #: Let the notification server choose how long to show it.
 SERVER_DEFAULT_TIMEOUT = -1
@@ -64,6 +68,12 @@ def plan(event: str, payload: dict[str, Any]) -> Notification | None:
             return _grace(payload)
         case "apps.closed":
             return _closed(payload)
+        case "break.warning":
+            return _break_coming(payload)
+        case "break.started":
+            return _break_started(payload)
+        case "break.ended":
+            return _break_ended(payload)
     return None
 
 
@@ -158,3 +168,64 @@ def _in_words(seconds: int) -> str:
         return f"in {seconds} seconds"
     minutes = math.ceil(seconds / 60)
     return "in a minute" if minutes == 1 else f"in {minutes} minutes"
+
+
+def _break_coming(payload: dict[str, Any]) -> Notification | None:
+    """ADR 2: a break must never arrive unannounced.
+
+    This is the whole of what Anchor promises about a Mandatory break. It
+    cannot hold the screen on Wayland, so it makes sure the break is never a
+    surprise; that promise is only kept if this notification is reliable.
+    """
+    seconds = int(float(payload.get("seconds", 0)))
+    length = int(float(payload.get("break_seconds", 0)))
+    body = f"It lasts {_minutes(length)}." if length else ""
+    return Notification(
+        summary=f"Break {_in_words(seconds)}",
+        body=body,
+        icon="alarm-symbolic",
+        channel=BREAK_CHANNEL,
+        # Gone by the time the break starts, so it never sits next to the
+        # alert saying the break has already begun.
+        timeout_ms=max(1, seconds) * 1000 if seconds else SERVER_DEFAULT_TIMEOUT,
+    )
+
+
+def _break_started(payload: dict[str, Any]) -> Notification | None:
+    """ADR 2: an alert when it begins, alongside the overlay if there is one."""
+    seconds = int(float(payload.get("seconds", 0)))
+    long = bool(payload.get("long"))
+    return Notification(
+        summary="Long break" if long else "Break time",
+        body=f"Take {_minutes(seconds)}." if seconds else "",
+        icon="media-playback-pause-symbolic",
+        channel=BREAK_CHANNEL,
+    )
+
+
+def _break_ended(payload: dict[str, Any]) -> Notification | None:
+    """Only when nothing else would say so.
+
+    A break the user skipped or postponed needs no announcement: they are the
+    one who ended it. An overlay says it is over by disappearing. A break that
+    was only ever a notification has no other signal, and a break with no end
+    is not a break, so that one is announced.
+    """
+    if payload.get("skipped") or payload.get("postponed"):
+        return None
+    if str(payload.get("type", "")) != str(BreakType.NOTIFICATION):
+        return None
+
+    return Notification(
+        summary="Break over",
+        body="Back to work.",
+        icon="alarm-symbolic",
+        channel=BREAK_CHANNEL,
+    )
+
+
+def _minutes(seconds: int) -> str:
+    minutes = math.ceil(seconds / 60)
+    if minutes <= 1:
+        return "a minute"
+    return f"{minutes} minutes"

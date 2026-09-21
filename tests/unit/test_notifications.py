@@ -9,6 +9,7 @@ import pytest
 from anchor.agent.notifications import (
     APPS_CHANNEL,
     BLOCKED_CHANNEL,
+    BREAK_CHANNEL,
     Urgency,
     plan,
 )
@@ -133,6 +134,65 @@ class TestAClosedApplication:
 
     def test_rubbish_in_the_list_is_ignored(self) -> None:
         assert plan("apps.closed", {"apps": ["  ", ""], "reason": "closed"}) is None
+
+
+class TestABreakComing:
+    """ADR 2: a break must never arrive unannounced."""
+
+    def test_it_says_how_long_until_the_break(self) -> None:
+        note = shown("break.warning", {"seconds": 60, "break_seconds": 300})
+
+        assert note.summary == "Break in a minute"
+
+    def test_it_says_how_long_the_break_is(self) -> None:
+        note = shown("break.warning", {"seconds": 120, "break_seconds": 600})
+
+        assert note.body == "It lasts 10 minutes."
+
+    def test_it_is_gone_by_the_time_the_break_starts(self) -> None:
+        """Otherwise it sits beside the alert saying the break has begun."""
+        assert shown("break.warning", {"seconds": 60, "break_seconds": 300}).timeout_ms == 60_000
+
+    def test_it_shares_a_channel_with_the_break_itself(self) -> None:
+        assert shown("break.warning", {"seconds": 60}).channel == BREAK_CHANNEL
+
+
+class TestABreakStarting:
+    def test_it_says_the_break_has_begun(self) -> None:
+        note = shown("break.started", {"seconds": 300, "long": False, "type": "overlay"})
+
+        assert note.summary == "Break time"
+        assert note.body == "Take 5 minutes."
+
+    def test_a_long_break_is_named_as_one(self) -> None:
+        note = shown("break.started", {"seconds": 900, "long": True, "type": "overlay"})
+
+        assert note.summary == "Long break"
+        assert note.body == "Take 15 minutes."
+
+    def test_one_minute_reads_as_a_minute(self) -> None:
+        note = shown("break.started", {"seconds": 60, "type": "notification"})
+
+        assert note.body == "Take a minute."
+
+
+class TestABreakEnding:
+    def test_a_notification_only_break_is_announced(self) -> None:
+        """Nothing else would say it is over, and a break with no end is not one."""
+        note = shown("break.ended", {"type": "notification", "taken": 1})
+
+        assert note.summary == "Break over"
+
+    def test_an_overlay_break_says_nothing(self) -> None:
+        """The overlay disappearing is the announcement."""
+        assert plan("break.ended", {"type": "overlay", "taken": 1}) is None
+
+    def test_a_skipped_break_says_nothing(self) -> None:
+        """The user ended it; telling them it ended is noise."""
+        assert plan("break.ended", {"type": "notification", "skipped": True}) is None
+
+    def test_a_postponed_break_says_nothing(self) -> None:
+        assert plan("break.ended", {"type": "notification", "postponed": True}) is None
 
 
 class TestSilence:

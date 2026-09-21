@@ -23,9 +23,11 @@ from collections.abc import Callable
 from types import FrameType
 from typing import Any
 
+from anchor.agent.breakscreen import screen_for
 from anchor.agent.feed import EngineFeed
 from anchor.agent.indicator import IndicatorModel
 from anchor.agent.notifications import Notification, plan
+from anchor.cli.client import EngineClient, EngineUnreachableError
 from anchor.engine.paths import Paths
 from anchor.protocol.messages import Event
 
@@ -41,12 +43,14 @@ class Agent:
         *,
         tray: Any = None,
         notifier: Any = None,
+        overlay: Any = None,
         schedule: Callable[[Callable[[], None]], None] | None = None,
     ) -> None:
         self.paths = paths
         self.model = IndicatorModel()
         self._tray = tray
         self._notifier = notifier
+        self._overlay = overlay
         # Drawing happens on the desktop's own thread when there is one; the
         # feed runs on its own, and D-Bus is not the place to find out what
         # happens when two threads meet.
@@ -64,6 +68,7 @@ class Agent:
     def on_status(self, status: dict[str, Any]) -> None:
         self.model.update_status(status)
         self._draw()
+        self._draw_break(status)
 
     def on_connected(self, connected: bool) -> None:
         self.model.note_connection(connected)
@@ -72,6 +77,10 @@ class Agent:
     def on_event(self, event: Event) -> None:
         self.model.note_event(event.event, event.payload)
         self._draw()
+        if event.event.startswith("break."):
+            # The next tick would do it a second later, which is a second of
+            # overlay after a break the user just skipped.
+            self._draw_break(self.model.status)
 
         notification = plan(event.event, event.payload)
         if notification is not None:
@@ -93,6 +102,51 @@ class Agent:
             # The panel is not worth the session. Anchor keeps blocking with
             # or without a top bar.
             log.exception("could not update the indicator")
+
+    def use_overlay(self, overlay: Any) -> None:
+        """Attach the break overlay.
+
+        Set after construction rather than passed in, because the overlay's
+        buttons talk back to the agent and one of the two has to exist first.
+        """
+        self._overlay = overlay
+
+    def _draw_break(self, status: dict[str, Any]) -> None:
+        """Put the overlay up, take it down, or leave it alone (SPEC 10)."""
+        if self._overlay is None:
+            return
+        screen = screen_for(status)
+        self._schedule(lambda: self._show_break(screen))
+
+    def _show_break(self, screen: Any) -> None:
+        try:
+            if screen is None:
+                if self._overlay.showing:
+                    self._overlay.hide()
+                return
+            self._overlay.show(screen)
+        except Exception:
+            # A break the user cannot see is a worse break, not a broken
+            # session. The engine keeps counting either way.
+            log.exception("could not draw the break overlay")
+
+    def ask_engine(self, request: str) -> None:
+        """Send one request, from a button on the overlay (SPEC 10).
+
+        On a thread, because it happens on a click and a socket that takes
+        five seconds to answer would freeze the screen it was clicked on.
+        """
+
+        def send() -> None:
+            try:
+                with EngineClient(self.paths.engine_socket, timeout=5.0) as client:
+                    response = client.call(request)
+                if not response.ok:
+                    log.warning("the engine refused %s: %s", request, response.error.get("message"))
+            except (EngineUnreachableError, OSError) as error:
+                log.warning("could not send %s: %s", request, error)
+
+        threading.Thread(target=send, name="anchor-request", daemon=True).start()
 
     def _notify(self, notification: Notification) -> None:
         if self._notifier is None:
@@ -185,6 +239,7 @@ def _run_on_the_desktop(paths: Paths) -> int:
         notifier=notifier,
         schedule=lambda work: GLib.idle_add(_once(work)),
     )
+    agent.use_overlay(_make_overlay(agent))
 
     tray.start(on_activate=_open_the_interface)
     agent.start()
@@ -198,6 +253,21 @@ def _run_on_the_desktop(paths: Paths) -> int:
         agent.stop()
         tray.stop()
     return 0
+
+
+def _make_overlay(agent: Agent) -> Any:
+    """The break overlay, if this desktop can carry one (SPEC 10, ADR 2)."""
+    from anchor.agent.overlay import BreakOverlay, OverlayUnavailableError
+
+    try:
+        return BreakOverlay(
+            on_postpone=lambda: agent.ask_engine("break.postpone"),
+            on_skip=lambda: agent.ask_engine("break.skip"),
+        )
+    except OverlayUnavailableError as error:
+        # The notification still arrives, which is the part ADR 2 promises.
+        log.warning("no break overlay: %s", error)
+        return None
 
 
 def _once(work: Callable[[], None]) -> Callable[[], bool]:

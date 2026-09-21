@@ -27,11 +27,15 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from anchor.cli.durations import format_countdown, format_duration
 from anchor.protocol.types import Level, SessionPhase
 
 #: The icon shown while a session runs. Anchor ships its own with the packages
 #: (Milestone 9); until then this is a name every icon theme carries.
 ICON_ACTIVE = "alarm-symbolic"
+
+#: Shown during a break, so a glance tells you which half you are in.
+ICON_BREAK = "media-playback-pause-symbolic"
 
 #: Shown when the engine cannot be reached, so the label is not to be trusted.
 ICON_UNKNOWN = "dialog-question-symbolic"
@@ -106,6 +110,30 @@ class IndicatorModel:
             self.status = {"active": False}
         elif "active" in payload:
             self.status = dict(payload)
+        elif event.startswith("break."):
+            self._note_break(payload)
+
+    def _note_break(self, payload: dict[str, Any]) -> None:
+        """Take the phase from a break event, without waiting for a tick.
+
+        A break event carries what the overlay needs rather than a copy of the
+        whole session, so this patches the phase and the length across and
+        lets the next tick correct the rest. One second late is a second of
+        overlay after a break the user has just skipped.
+        """
+        phase = str(payload.get("phase", "")) or None
+        if phase is None:
+            return
+
+        rest = dict(self.status.get("break") or {})
+        rest["phase"] = phase
+        if "seconds" in payload:
+            rest["remaining_seconds"] = float(payload["seconds"])
+        for key in ("long", "can_skip", "can_postpone", "hardness", "type"):
+            if key in payload:
+                rest[key] = payload[key]
+
+        self.status = {**self.status, "phase": phase, "break": rest}
 
     # -- what the panel draws --------------------------------------------
 
@@ -144,51 +172,64 @@ class IndicatorModel:
         level = str(status.get("level", Level.SOFT))
         profile = str(status.get("profile", "?"))
         attempts = int(status.get("blocked_attempts", 0))
-        apps_closed = int(status.get("app_blocks", 0))
         phase = str(status.get("phase", SessionPhase.WORKING))
         ends_at = float(status.get("ends_at", 0))
 
+        resting = phase == str(SessionPhase.BREAK)
         label = format_label(remaining)
         return IndicatorView(
             visible=True,
-            icon=ICON_ACTIVE,
+            icon=ICON_BREAK if resting else ICON_ACTIVE,
             label=label,
-            tooltip=f"{profile} · {level.capitalize()} · {label} left",
+            tooltip=(
+                f"{profile} · {level.capitalize()} · {label} left"
+                + (" · on a break" if resting else "")
+            ),
             menu=self._menu(
                 profile=profile,
                 level=level,
-                label=label,
+                remaining=remaining,
                 ends_at=ends_at,
                 attempts=attempts,
-                apps_closed=apps_closed,
-                phase=phase,
             ),
         )
+
+    def _break_line(self) -> str:
+        """When the next break falls, or how long this one has left (SPEC 14.1)."""
+        rest = self.status.get("break")
+        if not isinstance(rest, dict):
+            return "No breaks in this profile"
+
+        remaining = float(rest.get("remaining_seconds", 0))
+        if str(rest.get("phase", "")) == str(SessionPhase.BREAK):
+            kind = "Long break" if rest.get("long") else "Break"
+            return f"{kind}: {format_duration(remaining)} left"
+        return f"Next break in {format_duration(remaining)}"
 
     def _menu(
         self,
         *,
         profile: str,
         level: str,
-        label: str,
+        remaining: float,
         ends_at: float,
         attempts: int,
-        apps_closed: int,
-        phase: str,
     ) -> tuple[MenuItem, ...]:
-        """The lines SPEC 14.1 lists, in the order it lists them."""
-        items = [
+        """The lines SPEC 14.1 lists, in the order the mockup draws them.
+
+        Six lines and no more. Anything else worth knowing is in the interface,
+        and a menu that grows is a menu nobody reads.
+        """
+        return (
             MenuItem(f"{profile} · {level.capitalize()}", enabled=False),
-            MenuItem(f"{label} left · ends at {format_clock(ends_at)}", enabled=False),
-        ]
-
-        if phase == str(SessionPhase.BREAK):
-            items.append(MenuItem("On a break", enabled=False))
-
-        items.append(MenuItem(f"Blocked attempts: {attempts}", enabled=False))
-        if apps_closed:
-            items.append(MenuItem(f"Applications closed: {apps_closed}", enabled=False))
-
-        items.append(MenuItem("Extend session", action="extend"))
-        items.append(MenuItem("Open Anchor", action="open"))
-        return tuple(items)
+            # The panel label is minutes; the menu has room for the seconds,
+            # and the mockup uses them.
+            MenuItem(
+                f"{format_countdown(remaining)} left · ends at {format_clock(ends_at)}",
+                enabled=False,
+            ),
+            MenuItem(self._break_line(), enabled=False),
+            MenuItem(f"Blocked attempts: {attempts}", enabled=False),
+            MenuItem("Extend session", action="extend"),
+            MenuItem("Open Anchor", action="open"),
+        )

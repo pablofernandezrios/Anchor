@@ -21,6 +21,10 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from anchor.engine.breaks import BreakState
+from anchor.engine.breaks import advance as advance_breaks
+from anchor.engine.breaks import postpone as postpone_break
+from anchor.engine.breaks import skip as skip_break
 from anchor.engine.categories import Category, load_categories, resolve
 from anchor.engine.paths import Paths, Settings
 from anchor.engine.profiles import Profile
@@ -39,7 +43,14 @@ from anchor.engine.store import LoadStatus, SignedStore, load_or_create_key
 from anchor.engine.timekeeping import Clock, SystemClock, reconcile
 from anchor.protocol.errors import AnchorError, ErrorCode, RatchetViolationError
 from anchor.protocol.messages import Event, Request, Response
-from anchor.protocol.types import Level, RuptureKind, SessionOrigin, Valve, WebMode
+from anchor.protocol.types import (
+    Level,
+    RuptureKind,
+    SessionOrigin,
+    SessionPhase,
+    Valve,
+    WebMode,
+)
 
 log = logging.getLogger("anchord")
 
@@ -176,6 +187,11 @@ class Engine:
             self._end_session(reason="completed")
             return
 
+        self._advance_breaks(session)
+        session = self.state.session
+        if session is None:  # pragma: no cover - a break cannot end a session
+            return
+
         pending = session.exit_request
         if (
             pending is not None
@@ -215,6 +231,8 @@ class Engine:
             "valve.request": self._on_valve_request,
             "valve.withdraw": self._on_withdraw,
             "valve.phrase": self._on_valve_phrase,
+            "break.skip": self._on_break_skip,
+            "break.postpone": self._on_break_postpone,
             "profile.list": self._on_profile_list,
             "profile.show": self._on_profile_show,
             "profile.create": self._on_profile_create,
@@ -374,6 +392,23 @@ class Engine:
             )
 
         bundled = resolve(profile.categories, self.categories)
+
+        # SPEC 10: a break does not unblock anything unless the profile says
+        # so, and even then only sites. Applications stay blocked, because
+        # five minutes is long enough to lose an hour in one.
+        resting = session.phase is SessionPhase.BREAK
+        if resting and profile.breaks.allow_sites_during_breaks:
+            return request.ok(
+                {
+                    "active": True,
+                    "mode": str(WebMode.BLOCKLIST),
+                    "domains": [],
+                    "apps": sorted(profile.apps | bundled.apps),
+                    "grace_seconds": self._grace_remaining(session),
+                    "block_tunnels": (session.level is Level.STRICT and profile.block_vpn_and_tor),
+                }
+            )
+
         return request.ok(
             {
                 "active": True,
@@ -482,6 +517,77 @@ class Engine:
         self._record_rupture(RuptureKind.TAMPERING, f"{kind}: {detail}")
         return request.ok({"recorded": True})
 
+    def _advance_breaks(self, session: Session) -> None:
+        """Move the work-and-rest pattern on (SPEC 10).
+
+        A session whose profile has been uninstalled keeps its blocks and
+        stops changing phase: there is no pattern to follow, and guessing one
+        would interrupt the user on the strength of a guess.
+        """
+        profile = self.profiles.get(session.profile)
+        if session.breaks is None or profile is None:
+            return
+
+        outcome = advance_breaks(session.breaks, profile.breaks, self.clock)
+        if outcome.state == session.breaks and not outcome.events:
+            return
+
+        self.state.session = session.with_breaks(outcome.state)
+        self.save()
+        for name, payload in outcome.events:
+            self.emit(name, {**payload, "phase": str(outcome.state.phase)})
+
+    def _on_break_skip(self, request: Request) -> Response:
+        """Give up the break now running, if the profile allows it (SPEC 10)."""
+        session, profile, state = self._break_context()
+        self.state.session = session.with_breaks(skip_break(state, profile.breaks, self.clock))
+        self.save()
+        self.emit(
+            "break.ended",
+            {
+                "skipped": True,
+                "type": str(profile.breaks.type),
+                "phase": str(SessionPhase.WORKING),
+            },
+        )
+        return request.ok(self.status())
+
+    def _on_break_postpone(self, request: Request) -> Response:
+        """Push the break back, if the profile allows it (SPEC 10)."""
+        session, profile, state = self._break_context()
+        moved = postpone_break(state, profile.breaks, self.clock)
+        self.state.session = session.with_breaks(moved)
+        self.save()
+        self.emit(
+            "break.ended",
+            {
+                "postponed": True,
+                "seconds": moved.remaining(self.clock),
+                "type": str(profile.breaks.type),
+                "phase": str(SessionPhase.WORKING),
+            },
+        )
+        return request.ok(self.status())
+
+    def _break_context(self) -> tuple[Session, Profile, BreakState]:
+        """The session, profile and break state, or a refusal saying which is missing."""
+        self.tick()
+        session = self.state.session
+        if session is None:
+            raise AnchorError("no session is running", code=ErrorCode.NO_ACTIVE_SESSION)
+        if session.breaks is None:
+            raise AnchorError(
+                "this session has no break pattern, because its profile is not installed",
+                code=ErrorCode.UNKNOWN_PROFILE,
+            )
+        profile = self.profiles.get(session.profile)
+        if profile is None:
+            raise AnchorError(
+                f"there is no profile called {session.profile!r}",
+                code=ErrorCode.UNKNOWN_PROFILE,
+            )
+        return session, profile, session.breaks
+
     def _on_status(self, request: Request) -> Response:
         self.tick()
         return request.ok(self.status())
@@ -512,6 +618,7 @@ class Engine:
             "blocked_attempts": session.blocked_attempts,
             "app_blocks": session.app_blocks,
             "skips_remaining": self.state.skips_remaining,
+            "break": self._break_status(session),
             "exit_request": (
                 {
                     "kind": str(pending.kind),
@@ -521,6 +628,41 @@ class Engine:
                 if pending
                 else None
             ),
+        }
+
+    def _break_status(self, session: Session) -> dict[str, Any] | None:
+        """What the indicator, the overlay and the interface need (SPEC 10, 14.1).
+
+        One shape whether a break is running or not: the difference is the
+        phase, and a client that has to ask two questions to draw one line
+        eventually asks them at two different instants.
+        """
+        state = session.breaks
+        if state is None:
+            return None
+
+        profile = self.profiles.get(session.profile)
+        settings = profile.breaks if profile is not None else None
+        return {
+            "phase": str(state.phase),
+            "remaining_seconds": state.remaining(self.clock),
+            "ends_at": state.ends_at,
+            "long": state.long,
+            "taken": state.taken,
+            "postponed": state.postponed_total,
+            "skipped": state.skipped,
+            "cycles_done": state.cycles_done,
+            "type": str(settings.type) if settings else None,
+            "hardness": str(settings.hardness) if settings else None,
+            "can_skip": bool(settings and settings.hardness.can_skip),
+            "can_postpone": bool(
+                settings
+                and (
+                    settings.hardness.postpone_limit is None
+                    or state.postponed < settings.hardness.postpone_limit
+                )
+            ),
+            "allow_sites": bool(settings and settings.allow_sites_during_breaks),
         }
 
     def _on_start(self, request: Request) -> Response:
@@ -548,6 +690,13 @@ class Engine:
             clock=self.clock,
             policy=self.policy,
         )
+        profile = self.profiles.get(profile_name)
+        if profile is not None:
+            # The pattern belongs to the profile (SPEC 10, 12), so a session
+            # whose profile is not installed has no breaks rather than default
+            # ones: inventing a pattern would be inventing an interruption.
+            session = session.with_breaks(BreakState.start(profile.breaks, self.clock))
+
         self.state.session = session
         self.save()
         self._match_refusal()

@@ -8,6 +8,7 @@ import pytest
 
 from anchor.agent.indicator import (
     ICON_ACTIVE,
+    ICON_BREAK,
     ICON_UNKNOWN,
     UNKNOWN_LABEL,
     IndicatorModel,
@@ -33,9 +34,29 @@ def status(**overrides: Any) -> dict[str, Any]:
         "blocked_attempts": 0,
         "app_blocks": 0,
         "skips_remaining": 3,
+        "break": {
+            "phase": "working",
+            "remaining_seconds": 12 * 60,
+            "ends_at": 1_760_000_000.0 + 12 * 60,
+            "long": False,
+            "taken": 0,
+            "postponed": 0,
+            "skipped": 0,
+            "type": "overlay",
+            "hardness": "moderate",
+            "can_skip": False,
+            "can_postpone": True,
+            "allow_sites": False,
+        },
     }
     base.update(overrides)
     return base
+
+
+def resting(**overrides: Any) -> dict[str, Any]:
+    """A status with a break running."""
+    rest = {"phase": "break", "remaining_seconds": 5 * 60}
+    return status(phase="break", **{"break": {**status()["break"], **rest}, **overrides})
 
 
 def model(**overrides: Any) -> IndicatorModel:
@@ -111,23 +132,41 @@ class TestTheMenu:
         assert self.labels(model())[0] == "Study · Firm"
 
     def test_it_gives_the_time_left_and_the_end_time(self) -> None:
+        """The mockup writes the seconds here, and only rounds in the panel."""
         line = self.labels(model())[1]
 
-        assert line.startswith("2:14 left · ends at ")
+        assert line.startswith("2:14:00 left · ends at ")
 
     def test_it_shows_the_blocked_attempts(self) -> None:
         """SPEC 8.3: the indicator carries the count for the session."""
         assert "Blocked attempts: 7" in self.labels(model(blocked_attempts=7))
 
-    def test_closed_applications_appear_once_there_are_any(self) -> None:
-        assert "Applications closed: 2" in self.labels(model(app_blocks=2))
+    def test_it_is_the_six_lines_the_mockup_draws_and_no_more(self) -> None:
+        """A menu that grows is a menu nobody reads."""
+        assert len(self.labels(model(app_blocks=2))) == 6
 
-    def test_and_are_left_out_when_there_are_none(self) -> None:
-        """A line reading zero is a line that teaches nothing."""
-        assert not any("Applications closed" in label for label in self.labels(model()))
+    def test_it_says_when_the_next_break_falls(self) -> None:
+        """SPEC 14.1 lists it among the menu's lines."""
+        assert "Next break in 12 min" in self.labels(model())
 
-    def test_a_break_says_so(self) -> None:
-        assert "On a break" in self.labels(model(phase="break"))
+    def test_during_a_break_it_says_how_long_is_left(self) -> None:
+        subject = IndicatorModel()
+        subject.update_status(resting())
+
+        assert "Break: 5 min left" in [item.label for item in subject.view.menu]
+
+    def test_a_long_break_is_named_as_one(self) -> None:
+        subject = IndicatorModel()
+        subject.update_status(resting(**{"break": {**resting()["break"], "long": True}}))
+
+        assert "Long break: 5 min left" in [item.label for item in subject.view.menu]
+
+    def test_a_profile_without_a_pattern_says_so(self) -> None:
+        """A session whose profile was uninstalled has no breaks to show."""
+        subject = IndicatorModel()
+        subject.update_status(status(**{"break": None}))
+
+        assert "No breaks in this profile" in [item.label for item in subject.view.menu]
 
     def test_the_two_actions_are_the_ones_the_specification_names(self) -> None:
         actions = [item.action for item in model().view.menu if item.action]
@@ -138,6 +177,28 @@ class TestTheMenu:
         for item in model().view.menu:
             if not item.action:
                 assert not item.enabled
+
+
+class TestDuringABreak:
+    def test_the_icon_changes(self) -> None:
+        """A glance should say which half of the pattern you are in."""
+        subject = IndicatorModel()
+        subject.update_status(resting())
+
+        assert subject.view.icon == ICON_BREAK
+
+    def test_the_tooltip_says_so(self) -> None:
+        subject = IndicatorModel()
+        subject.update_status(resting())
+
+        assert subject.view.tooltip.endswith("on a break")
+
+    def test_the_countdown_is_still_the_sessions(self) -> None:
+        """The break has its own clock; the label is time left in the session."""
+        subject = IndicatorModel()
+        subject.update_status(resting())
+
+        assert subject.view.label == "2:14"
 
 
 class TestWhenTheEngineIsUnreachable:
@@ -216,3 +277,46 @@ class TestTheClock:
 
     def test_a_nonsense_timestamp_does_not_crash_the_panel(self) -> None:
         assert format_clock(1e30) == "?"
+
+
+class TestFollowingBreakEvents:
+    """A break event carries the phase, so the overlay need not wait a tick."""
+
+    def test_a_break_starting_changes_the_phase_at_once(self) -> None:
+        subject = model()
+        subject.note_event(
+            "break.started",
+            {"seconds": 300, "long": False, "phase": "break", "type": "overlay"},
+        )
+
+        assert subject.status["phase"] == "break"
+        assert subject.status["break"]["remaining_seconds"] == 300
+
+    def test_a_break_ending_changes_it_back(self) -> None:
+        subject = model()
+        subject.note_event("break.started", {"seconds": 300, "phase": "break"})
+
+        subject.note_event("break.ended", {"taken": 1, "phase": "working"})
+
+        assert subject.status["phase"] == "working"
+
+    def test_the_icon_follows(self) -> None:
+        subject = model()
+        subject.note_event("break.started", {"seconds": 300, "phase": "break"})
+
+        assert subject.view.icon == ICON_BREAK
+
+    def test_a_warning_does_not_change_the_phase(self) -> None:
+        """It is a warning precisely because the break has not started."""
+        subject = model()
+        subject.note_event("break.warning", {"seconds": 60, "break_seconds": 300})
+
+        assert subject.status["phase"] == "working"
+
+    def test_an_event_with_no_phase_changes_nothing(self) -> None:
+        subject = model()
+        before = dict(subject.status)
+
+        subject.note_event("break.warning", {"seconds": 60})
+
+        assert subject.status == before

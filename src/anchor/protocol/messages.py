@@ -65,6 +65,9 @@ REQUEST_SCHEMAS: Final[dict[str, Schema]] = {
     "valve.withdraw": EMPTY,
     "valve.phrase": Schema(text=Field(str)),
     "schedule.skip": EMPTY,
+    # Sent by the break overlay, which is where SPEC 10's table is acted on.
+    "break.skip": EMPTY,
+    "break.postpone": EMPTY,
     "profile.list": EMPTY,
     "profile.show": Schema(name=Field(str)),
     "profile.create": Schema(

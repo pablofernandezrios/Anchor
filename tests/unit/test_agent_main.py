@@ -191,3 +191,108 @@ class TestTheCommandLine:
 
     def test_dry_run_is_off_by_default(self) -> None:
         assert _parse_args([]).dry_run is False
+
+
+class FakeOverlay:
+    def __init__(self, *, broken: bool = False) -> None:
+        self.screens: list[Any] = []
+        self.hidden = 0
+        self.showing = False
+        self.broken = broken
+
+    def show(self, screen: Any) -> None:
+        if self.broken:
+            raise RuntimeError("the compositor is on fire")
+        self.screens.append(screen)
+        self.showing = True
+
+    def hide(self) -> None:
+        self.hidden += 1
+        self.showing = False
+
+
+def resting(**overrides: Any) -> dict[str, Any]:
+    """A status with a break running."""
+    rest: dict[str, Any] = {
+        "phase": "break",
+        "remaining_seconds": 300,
+        "ends_at": 0.0,
+        "long": False,
+        "taken": 0,
+        "postponed": 0,
+        "skipped": 0,
+        "type": "overlay",
+        "hardness": "moderate",
+        "can_skip": False,
+        "can_postpone": True,
+        "allow_sites": False,
+    }
+    rest.update(overrides)
+    return status(phase="break", **{"break": rest})
+
+
+class TestTheBreakOverlay:
+    def parts(self, tmp_path: Path) -> tuple[Agent, FakeOverlay]:
+        overlay = FakeOverlay()
+        agent = Agent(Paths.resolve(tmp_path), tray=FakeTray(), notifier=FakeNotifier())
+        agent.use_overlay(overlay)
+        return agent, overlay
+
+    def test_it_stays_down_while_working(self, tmp_path: Path) -> None:
+        agent, overlay = self.parts(tmp_path)
+
+        agent.on_status(status())
+
+        assert overlay.screens == []
+
+    def test_it_goes_up_when_a_break_starts(self, tmp_path: Path) -> None:
+        agent, overlay = self.parts(tmp_path)
+
+        agent.on_status(resting())
+
+        assert overlay.screens[-1].countdown == "05:00"
+
+    def test_it_follows_the_countdown(self, tmp_path: Path) -> None:
+        agent, overlay = self.parts(tmp_path)
+        agent.on_status(resting())
+
+        agent.on_status(resting(remaining_seconds=299))
+
+        assert overlay.screens[-1].countdown == "04:59"
+
+    def test_it_comes_down_when_the_break_ends(self, tmp_path: Path) -> None:
+        agent, overlay = self.parts(tmp_path)
+        agent.on_status(resting())
+
+        agent.on_status(status())
+
+        assert overlay.hidden == 1
+
+    def test_a_skipped_break_takes_it_down_at_once(self, tmp_path: Path) -> None:
+        """Waiting for the next tick is a second of overlay after a skip."""
+        agent, overlay = self.parts(tmp_path)
+        agent.on_status(resting())
+
+        agent.on_event(Event(event="break.ended", payload={"skipped": True, "phase": "working"}))
+
+        assert overlay.hidden == 1
+
+    def test_an_overlay_that_raises_does_not_stop_the_agent(self, tmp_path: Path) -> None:
+        """A break nobody can see is a worse break, not a broken session."""
+        tray = FakeTray()
+        agent = Agent(Paths.resolve(tmp_path), tray=tray, notifier=FakeNotifier())
+        agent.use_overlay(FakeOverlay(broken=True))
+
+        agent.on_status(resting())
+
+        assert tray.views[-1].visible is True
+
+    def test_with_no_overlay_nothing_happens(self, tmp_path: Path) -> None:
+        """A desktop without GTK still gets the notification."""
+        notifier = FakeNotifier()
+        agent = Agent(Paths.resolve(tmp_path), tray=FakeTray(), notifier=notifier)
+
+        agent.on_status(resting())
+        agent.on_event(Event(event="break.started", payload={"seconds": 300, "type": "overlay"}))
+
+        assert notifier.sent[-1].summary == "Break time"
