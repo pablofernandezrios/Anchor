@@ -345,6 +345,30 @@ The same run confirmed the rest of SPEC 14.1 as drawn: the icon appears, the
 time appears **beside** it, the three notifications arrive and read properly,
 and the item leaves the bar when the session ends.
 
+### The break overlay (Milestone 6)
+
+```sh
+python3 tools/check_overlay.py
+```
+
+Run on the owner's VM, one display, Ubuntu GNOME on Wayland. GTK 4 opened a
+display, one fullscreen window went up, the dark break screen covered the
+whole display with its countdown and advice, the Postpone button reached the
+agent, and nothing was left behind afterwards.
+
+**Two rows were wrong, and both were the check's fault.** It read the monitor
+count *after* taking the overlay down, so it asked "Anchor found 0 monitor(s)"
+three lines under "1 found". And clicking a button ended the run, which took
+the overlay away before the owner could try to switch away from it — losing
+the one question [ADR 2](../adr/0002-what-a-break-can-and-cannot-enforce.md)
+actually left open. Both fixed: the count is read while the windows exist, a
+click is noted without ending the check, and the terminal now says when to try
+switching away.
+
+**Still unverified:** whether a compositor that will not keep the overlay on
+top at least brings it back when asked (ADR 2's fourth promise), and the
+multi-monitor case, which needs a second screen.
+
 ---
 
 ## Running the rest

@@ -140,6 +140,39 @@ A profile a session is enforcing cannot be deleted either. A profile nothing is
 using can be edited and deleted freely, because there is no way to move a
 running session onto it.
 
+### `anchor break skip|postpone`
+
+The break that is running, if the profile lets you avoid it (SPEC 10). The
+overlay has these as buttons; this is the same thing from a terminal, because
+SPEC 15 asks for parity with the interface.
+
+```
+$ anchor break postpone
+Study · Firm
+2:14:37 remaining · ends at 13:30
+...
+```
+
+What each hardness allows:
+
+| Hardness | `skip` | `postpone` |
+|---|---|---|
+| Flexible | Yes | Yes, as often as you like |
+| Moderate | No | Once, five minutes |
+| Mandatory | No | No |
+
+A refusal exits 4, like every other refusal on purpose:
+
+```
+$ anchor break skip
+anchor: a mandatory break cannot be skipped
+$ echo $?
+4
+```
+
+The limit counts postponements of the break now owed, not of the session, so
+taking one forgives the last.
+
 ### `anchor category list|show`
 
 The shipped bundles of domains and applications a profile can tick (SPEC 12).
@@ -178,7 +211,7 @@ domains are ignored: adding them to the list of what is allowed would turn
 
 `anchor skip`, `anchor category edit`, `anchor schedule`, `anchor stats`,
 `anchor config` and `anchor doctor` are specified in SPEC 15 and arrive with
-Milestones 6, 7 and 9.
+Milestones 7, 8 and 9.
 
 ## Exit codes
 

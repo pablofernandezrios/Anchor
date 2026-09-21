@@ -340,3 +340,89 @@ class TestAcrossARestart:
         assert session is not None
         assert session.breaks is not None
         assert session.breaks.remaining(clock) == pytest.approx(5 * MINUTE, abs=2)
+
+
+class TestTheCommandLine:
+    """SPEC 15 asks for parity with the interface, and the overlay has buttons."""
+
+    def cli(self, paths: Paths, *arguments: str) -> tuple[int, str, str]:
+        import subprocess
+        import sys
+
+        done = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "anchor.cli.main",
+                "--root",
+                str(paths.state_dir.parents[2]),
+                *arguments,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return done.returncode, done.stdout, done.stderr
+
+    def flexible(self, engine: Engine) -> None:
+        engine.profiles["Study"] = Profile(
+            name="Study",
+            domains=frozenset({"youtube.com"}),
+            breaks=BreakSettings(work_minutes=25, break_minutes=5, hardness=BreakHardness.FLEXIBLE),
+        )
+        engine.save_config()
+
+    def test_a_break_can_be_skipped_from_the_terminal(
+        self, client: EngineClient, clock: FakeClock, engine: Engine, paths: Paths
+    ) -> None:
+        self.flexible(engine)
+        start(client)
+        clock.advance(25 * MINUTE)
+        assert status(client)["phase"] == str(SessionPhase.BREAK)
+
+        code, out, err = self.cli(paths, "break", "skip")
+
+        assert code == 0, err
+        assert status(client)["phase"] == str(SessionPhase.WORKING)
+
+    def test_and_postponed(
+        self, client: EngineClient, clock: FakeClock, engine: Engine, paths: Paths
+    ) -> None:
+        self.flexible(engine)
+        start(client)
+        clock.advance(25 * MINUTE)
+
+        code, _out, err = self.cli(paths, "break", "postpone")
+
+        assert code == 0, err
+        assert status(client)["break"]["postponed"] == 1
+
+    def test_a_refusal_carries_the_exit_code_for_one(
+        self, client: EngineClient, clock: FakeClock, engine: Engine, paths: Paths
+    ) -> None:
+        """SPEC 15: refused on purpose is exit code 4, and scripts rely on it."""
+        engine.profiles["Study"] = Profile(
+            name="Study",
+            breaks=BreakSettings(
+                work_minutes=25, break_minutes=5, hardness=BreakHardness.MANDATORY
+            ),
+        )
+        engine.save_config()
+        start(client)
+        clock.advance(25 * MINUTE)
+
+        code, _out, err = self.cli(paths, "break", "skip")
+
+        assert code == 4
+        assert "cannot be skipped" in err
+
+    def test_with_no_break_running_it_says_so(
+        self, client: EngineClient, engine: Engine, paths: Paths
+    ) -> None:
+        self.flexible(engine)
+        start(client)
+
+        code, _out, err = self.cli(paths, "break", "skip")
+
+        assert code != 0
+        assert "no break" in err

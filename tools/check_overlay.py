@@ -201,25 +201,47 @@ def main(argv: list[str] | None = None) -> int:
     loop = GLib.MainLoop()
     remaining = [args.seconds]
 
+    announced: list[str] = []
+
     def tick() -> bool:
         remaining[0] -= 1
         screen = screen_for(sample(remaining[0], hardness=args.hardness))
-        if screen is None or remaining[0] <= 0 or clicked:
+        if screen is None or remaining[0] <= 0:
             loop.quit()
             return False
+        # A click is noted and the overlay stays up. In a real session it ends
+        # the break; here it would end the check, and the question about
+        # switching away — the one ADR 2 actually left open — would go with it.
+        if clicked and not announced:
+            announced.append(clicked[0])
+            print(f"    {clicked[0]} reached the agent; the overlay stays up", flush=True)
         overlay.show(screen)
         return True
 
+    def nudge() -> bool:
+        """Ask for the one thing only a person can do, while there is time."""
+        print(
+            "\n    >>> now please try to Alt-Tab away, or click another window <<<",
+            flush=True,
+        )
+        return False
+
+    monitors = 0
     try:
         first = screen_for(sample(args.seconds, hardness=args.hardness))
         assert first is not None
         overlay.show(first)
+        # Read now, while the windows exist: hide() destroys them, and asking
+        # afterwards is how the first run came to say "0 monitor(s) found"
+        # three lines under "1 found".
+        monitors = overlay.monitors
         report.add(
             "the overlay is up",
             "works",
-            f"one window per monitor: {overlay.monitors} found",
+            f"one window per monitor: {monitors} found",
         )
         GLib.timeout_add(1000, tick)
+        GLib.timeout_add(4000, nudge)
         loop.run()
     except KeyboardInterrupt:
         print("\nended early", flush=True)
@@ -246,7 +268,7 @@ def main(argv: list[str] | None = None) -> int:
     ask(
         report,
         "every monitor",
-        f"Anchor found {overlay.monitors} monitor(s). If you have more than "
+        f"Anchor found {monitors} monitor(s). If you have more than "
         "one, was EVERY screen covered? (yes / only one / I have one monitor)",
         assume_yes=args.yes,
     )

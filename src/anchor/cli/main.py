@@ -135,6 +135,13 @@ def build_parser() -> argparse.ArgumentParser:
     category_show = category_actions.add_parser("show", help="Show what a category covers.")
     category_show.add_argument("name", help="The category's identifier, as `list` prints it.")
 
+    breaks = commands.add_parser(
+        "break", help="The break that is running, if the profile lets you avoid it."
+    )
+    break_actions = breaks.add_subparsers(dest="action", required=True)
+    break_actions.add_parser("skip", help="Give it up. Flexible profiles only.")
+    break_actions.add_parser("postpone", help="Push it back five minutes.")
+
     valve = commands.add_parser("valve", help="The emergency exit from a Strict session.")
     valve_actions = valve.add_subparsers(dest="action", required=True)
     valve_actions.add_parser("request", help="Ask to be let out.")
@@ -225,6 +232,9 @@ def _request_for(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
             # One request for both actions: the list is small, and asking the
             # engine to filter it would be a request that adds nothing.
             return "category.list", {}
+
+        case "break":
+            return f"break.{args.action}", {}
 
         case "valve":
             match args.action:
