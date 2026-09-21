@@ -353,3 +353,7 @@ def decode_request(line: bytes | str) -> Request:
 
 def decode_response(line: bytes | str) -> Response:
     return Response.from_dict(decode_json_line(line))
+
+
+def decode_event(line: bytes | str) -> Event:
+    return Event.from_dict(decode_json_line(line))

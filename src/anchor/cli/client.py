@@ -7,11 +7,20 @@ sends them, and renders what comes back.
 from __future__ import annotations
 
 import socket
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Self
 
-from anchor.protocol.messages import MAX_LINE_BYTES, Request, Response, decode_response, encode
+from anchor.protocol.messages import (
+    MAX_LINE_BYTES,
+    Event,
+    Request,
+    Response,
+    decode_event,
+    decode_response,
+    encode,
+)
 
 
 class EngineUnreachableError(RuntimeError):
@@ -83,3 +92,36 @@ class EngineClient:
         if not line:
             raise EngineUnreachableError("the engine closed the connection without answering")
         return decode_response(line)
+
+    def subscribe(
+        self,
+        events: list[str] | None = None,
+        *,
+        should_stop: Callable[[], bool] = lambda: False,
+    ) -> Iterator[Event]:
+        """Turn this connection into an event feed and read it (SPEC 5.2).
+
+        The engine answers the subscription first and then sends nothing but
+        events, so this connection cannot be used for requests again. A quiet
+        feed is normal — no session means no events — so a read timing out is
+        not an error, only an opportunity to notice that we were asked to stop.
+        """
+        response = self.call("events.subscribe", {"events": events} if events else {})
+        if not response.ok:
+            raise EngineUnreachableError(
+                f"the engine refused the subscription: {response.error.get('message')}"
+            )
+
+        if self._reader is None:  # pragma: no cover - call() would have raised
+            raise EngineUnreachableError("not connected to the engine")
+
+        while not should_stop():
+            try:
+                line = self._reader.readline(MAX_LINE_BYTES + 1)
+            except TimeoutError:
+                continue
+            except OSError as error:
+                raise EngineUnreachableError(f"the event feed broke: {error}") from error
+            if not line:
+                raise EngineUnreachableError("the engine closed the event feed")
+            yield decode_event(line)
