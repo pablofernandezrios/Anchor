@@ -285,17 +285,27 @@ def main() -> int:
     write_profile()
 
     environment = {**os.environ, "ANCHOR_ROOT": str(ANCHOR_ROOT), "PYTHONPATH": str(ROOT / "src")}
+
+    # To files rather than to a pipe nobody reads. A pipe that fills stops the
+    # daemon writing to it, and when this fails on a machine I cannot log into
+    # the daemon's own account of what it did is the only evidence there is:
+    # the first real bug this test caught was invisible from the outside,
+    # because the blocking it reports looked perfect from every angle but one.
+    out_dir.mkdir(parents=True, exist_ok=True)
+    engine_log = (out_dir / "anchord.log").open("w", encoding="utf-8")
+    blocker_log = (out_dir / "anchor-blockerd.log").open("w", encoding="utf-8")
+
     engine = subprocess.Popen(
         [sys.executable, "-m", "anchor.engine.main", "--owner-uid", str(os.getuid())],
         env=environment,
-        stdout=subprocess.PIPE,
+        stdout=engine_log,
         stderr=subprocess.STDOUT,
         text=True,
     )
     blocker = subprocess.Popen(
         [sys.executable, "-m", "anchor.blocker.main", "--data-dir", str(ROOT / "data")],
         env=environment,
-        stdout=subprocess.PIPE,
+        stdout=blocker_log,
         stderr=subprocess.STDOUT,
         text=True,
     )
@@ -350,6 +360,8 @@ def main() -> int:
             check=False,
             capture_output=True,
         )
+        engine_log.close()
+        blocker_log.close()
 
     working = resolves(ALLOWED)
     report.add(
@@ -377,7 +389,12 @@ def main() -> int:
                 check.detail += "machine's network is the likelier explanation"
             print(f"      (revised) {check.line()}", flush=True)
 
-    out_dir.mkdir(parents=True, exist_ok=True)
+    if report.leaked:
+        # Printed only on a failure, and only the blocker's, which is the one
+        # that touches the machine.
+        print(f"\n--- {blocker_log.name} ---", flush=True)
+        print(Path(blocker_log.name).read_text(encoding="utf-8"), flush=True)
+
     (out_dir / "leak-results.json").write_text(
         json.dumps(
             {"leaked": report.leaked, "checks": [asdict(c) for c in report.checks]},

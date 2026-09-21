@@ -175,6 +175,19 @@ refuses to redirect DNS when it can find no upstream at all: a redirect with
 nowhere to forward is a total loss of name resolution, far worse than not
 blocking, and indistinguishable from it to the user.
 
+**Following the network never costs the upstreams.** The daemon re-reads
+`resolvectl status` every few seconds so a laptop that changes network keeps
+working (SPEC 3). During a session that reading is Anchor's own work: every
+link points at the resolver, Anchor filters its own address out, and a healthy
+machine reads as having no DNS servers at all. Anchor keeps the servers it was
+already forwarding to rather than believing that, because the alternative — an
+empty upstream list a few seconds into every session — blocks every name on
+the machine while the blocked ones stay correctly blocked, which reads to the
+user as Anchor taking the whole internet away. A network that has genuinely
+lost every server is indistinguishable from here, and keeping the old servers
+costs nothing in that case (P4). Links appearing and disappearing, and servers
+changing while they are still visible, are still followed.
+
 **Encrypted DNS is closed off.** Managed policies disable DoH in Firefox and
 the Chromium family, and the firewall rejects DNS over TLS and the shipped DoH
 endpoints on both TCP and UDP 443. The policies only apply when a browser

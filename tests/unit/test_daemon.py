@@ -176,6 +176,79 @@ class TestWithoutAnUpstream:
         assert daemon.applied
 
 
+class TestFollowingTheNetworkMidSession:
+    """What the daemon sees once it has configured the machine itself.
+
+    Every five seconds the daemon re-reads the network, so that a laptop
+    moving between networks keeps working (SPEC 3). What it reads during a
+    session is its own configuration: every link points at Anchor, Anchor
+    filters itself out, and the machine reads as having no DNS servers at
+    all. Believing that cost the resolver its upstreams and stopped every
+    name on the machine resolving a few seconds into every session — while
+    the blocked names went on being blocked, so it looked like Anchor
+    working and felt like the internet being switched off.
+    """
+
+    MID_SESSION = """\
+Link 2 (eth0)
+       DNS Servers: 127.0.0.1:5391
+"""
+
+    class Spy:
+        """Stands in for the resolver, which needs a socket to exist."""
+
+        def __init__(self) -> None:
+            self.upstreams: list[str] = []
+            self.sets: list[list[str]] = []
+
+        def set_upstreams(self, upstreams: object) -> None:
+            self.upstreams = list(upstreams)  # type: ignore[call-overload]
+            self.sets.append(list(self.upstreams))
+
+    def running(self, daemon: BlockerDaemon, runner: RecordingRunner) -> Spy:
+        spy = self.Spy()
+        daemon._resolver = spy  # type: ignore[assignment]
+        daemon.apply(WebMode.BLOCKLIST, frozenset({"youtube.com"}))
+        runner.replies["resolvectl status"] = Result(code=0, out=self.MID_SESSION)
+        return spy
+
+    def test_the_resolver_keeps_somewhere_to_forward_to(
+        self, daemon: BlockerDaemon, runner: RecordingRunner
+    ) -> None:
+        spy = self.running(daemon, runner)
+        assert spy.upstreams == ["192.168.1.1"]
+
+        daemon.follow_network()
+
+        assert spy.upstreams == ["192.168.1.1"]
+
+    def test_and_nothing_is_re_applied_over_and_over(
+        self, daemon: BlockerDaemon, runner: RecordingRunner
+    ) -> None:
+        """Every poll would otherwise look like the network having moved."""
+        self.running(daemon, runner)
+        runner.calls.clear()
+
+        daemon.follow_network()
+        daemon.follow_network()
+
+        assert not runner.ran("resolvectl dns eth0")
+
+    def test_a_link_appearing_is_still_followed(
+        self, daemon: BlockerDaemon, runner: RecordingRunner
+    ) -> None:
+        """The whole point of looking: SPEC 3's laptop changing networks."""
+        self.running(daemon, runner)
+        runner.replies["resolvectl status"] = Result(
+            code=0,
+            out=self.MID_SESSION + "\nLink 3 (wlan0)\n       DNS Servers: 10.0.0.1\n",
+        )
+
+        daemon.follow_network()
+
+        assert runner.ran("resolvectl dns wlan0 127.0.0.1:5391")
+
+
 class TestUndoing:
     def test_everything_is_put_back(self, daemon: BlockerDaemon, runner: RecordingRunner) -> None:
         daemon.apply(WebMode.BLOCKLIST, frozenset({"youtube.com"}))

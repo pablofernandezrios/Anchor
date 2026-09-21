@@ -418,6 +418,10 @@ class BlockerDaemon:
                 runner=self.runner,
                 resolver_port=self.resolver_port,
                 drop_in=self.resolved_drop_in,
+                # What resolved reported a moment ago, for the case where a
+                # previous session's drop-in is still in place and the only
+                # servers left to read are Anchor's own.
+                known_upstreams=upstreams,
             )
             if self._resolver is not None:
                 self._resolver.set_upstreams(self._network.upstreams)
@@ -465,5 +469,8 @@ class BlockerDaemon:
         )
         if updated is not None:
             self._network = updated
-            if self._resolver is not None:
+            if self._resolver is not None and updated.upstreams:
+                # Never replace working servers with none. A re-apply that
+                # found nothing to read has already said so; forwarding to an
+                # empty list would stop every name on the machine resolving.
                 self._resolver.set_upstreams(updated.upstreams)

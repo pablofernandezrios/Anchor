@@ -199,6 +199,126 @@ class TestFollowingTheNetwork:
         assert follow_network_changes(journal, before, runner=runner, drop_in=drop_in) is not None
 
 
+class TestLookingAtItsOwnWork:
+    """The reading taken once Anchor has already configured the links.
+
+    This is the state a session spends all of its time in, and nothing tested
+    it: every fixture above shows a machine Anchor has not touched yet. The
+    leak tests found it from the far end — during a session no name resolved
+    at all, while the blocked name went on being blocked correctly, which is
+    a focus session that takes the whole internet away.
+    """
+
+    #: What `resolvectl status` says a few seconds into a session: every link
+    #: points at Anchor, and read_state filters Anchor out.
+    CONFIGURED = """\
+Global
+         Protocols: LLMNR=resolve -mDNS -DNSOverTLS
+       DNS Servers: 127.0.0.1:5391
+
+Link 2 (eth0)
+    Current Scopes: DNS
+       DNS Servers: 127.0.0.1:5391
+        DNS Domain: ~.
+
+Link 3 (wlan0)
+    Current Scopes: DNS
+       DNS Servers: 127.0.0.1:5391
+        DNS Domain: ~.
+
+Link 1 (lo)
+    Current Scopes: none
+"""
+
+    def test_a_session_in_progress_reads_as_no_servers_at_all(self) -> None:
+        """The reading itself is right; believing it is what was wrong."""
+        state = read_state(runner=runner_with_status(self.CONFIGURED), resolver_port=5391)
+
+        assert state.links == ["eth0", "wlan0"]
+        assert state.upstreams == []
+
+    def test_that_is_not_taken_for_a_network_change(self, journal: Journal, drop_in: Path) -> None:
+        before = NetworkState(links=["eth0", "wlan0"], upstreams=["192.168.1.1"])
+        runner = runner_with_status(self.CONFIGURED)
+
+        assert (
+            follow_network_changes(
+                journal, before, runner=runner, resolver_port=5391, drop_in=drop_in
+            )
+            is None
+        )
+
+    def test_and_nothing_is_re_applied_for_it(self, journal: Journal, drop_in: Path) -> None:
+        """The re-apply is where the upstreams were lost, so it must not run."""
+        before = NetworkState(links=["eth0", "wlan0"], upstreams=["192.168.1.1"])
+        runner = runner_with_status(self.CONFIGURED)
+
+        follow_network_changes(journal, before, runner=runner, resolver_port=5391, drop_in=drop_in)
+
+        assert not runner.ran("resolvectl dns eth0")
+
+    def test_a_real_change_is_still_noticed_through_it(
+        self, journal: Journal, drop_in: Path
+    ) -> None:
+        """A new link appears while the old ones read as Anchor's."""
+        with_new_link = self.CONFIGURED.replace(
+            "Link 1 (lo)",
+            "Link 4 (usb0)\n    Current Scopes: DNS\n       DNS Servers: 10.9.9.1\n\nLink 1 (lo)",
+        )
+        before = NetworkState(links=["eth0", "wlan0"], upstreams=["192.168.1.1"])
+        runner = runner_with_status(with_new_link)
+
+        after = follow_network_changes(
+            journal, before, runner=runner, resolver_port=5391, drop_in=drop_in
+        )
+
+        assert after is not None
+        assert after.links == ["eth0", "wlan0", "usb0"]
+
+    def test_and_re_applying_keeps_somewhere_to_forward_to(
+        self, journal: Journal, drop_in: Path
+    ) -> None:
+        """The bug, at the point where it did the damage.
+
+        A re-apply during a session reads the links it configured itself. If
+        it returns what it read, the resolver is handed an empty list and
+        answers SERVFAIL to every name that is not blocked.
+        """
+        before = NetworkState(links=["eth0"], upstreams=["192.168.1.1", "192.168.1.2"])
+        runner = runner_with_status(self.CONFIGURED)
+
+        after = follow_network_changes(
+            journal, before, runner=runner, resolver_port=5391, drop_in=drop_in
+        )
+
+        assert after is not None
+        assert after.upstreams == ["192.168.1.1", "192.168.1.2"]
+
+    def test_applying_over_a_previous_session_s_leftovers(
+        self, journal: Journal, drop_in: Path
+    ) -> None:
+        """The same emptiness, reached the other way: a crash left the drop-in."""
+        runner = runner_with_status(self.CONFIGURED)
+
+        state = apply(
+            journal,
+            runner=runner,
+            resolver_port=5391,
+            drop_in=drop_in,
+            known_upstreams=["192.168.1.1"],
+        )
+
+        assert state.upstreams == ["192.168.1.1"]
+
+    def test_a_machine_that_really_has_no_servers_still_reads_as_none(
+        self, journal: Journal, drop_in: Path
+    ) -> None:
+        """Nothing is invented: with nothing known, there is nothing to keep."""
+        runner = runner_with_status(self.CONFIGURED)
+
+        assert apply(journal, runner=runner, resolver_port=5391, drop_in=drop_in).upstreams == []
+
+
 class TestFindingUpstreamsWithoutResolved:
     """The path for distributions with no systemd-resolved (SPEC 8.2).
 

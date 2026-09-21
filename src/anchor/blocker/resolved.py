@@ -27,7 +27,8 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Final
 
@@ -110,13 +111,21 @@ def apply(
     runner: Runner = run,
     resolver_port: int = RESOLVER_PORT,
     drop_in: Path = RESOLVED_DROP_IN,
+    known_upstreams: Sequence[str] = (),
 ) -> NetworkState:
     """Point resolved at Anchor. Returns the upstreams to forward to.
 
     The upstreams are read first, before anything is changed. Reading them
     afterwards would find Anchor's own address and nothing else.
+
+    ``known_upstreams`` is what the caller already knows to work, and is used
+    when the reading finds nothing. Re-applying during a session is exactly
+    that case: the links are already pointed at Anchor, so there is nothing
+    left to read. See ``follow_network_changes``.
     """
     state = read_state(runner=runner, resolver_port=resolver_port)
+    if not state.upstreams and known_upstreams:
+        state = replace(state, upstreams=list(known_upstreams))
     if not state.upstreams:
         log.warning(
             "resolved reports no upstream DNS servers; Anchor has nowhere to "
@@ -165,6 +174,26 @@ def follow_network_changes(
     (SPEC 5.4), and catches a new link, a lost link and a changed server alike.
     """
     current = read_state(runner=runner, resolver_port=resolver_port)
+
+    if not current.upstreams and previous.upstreams:
+        # Anchor is looking at its own work. Once the links are pointed at the
+        # resolver, `resolvectl status` reports Anchor's address and nothing
+        # else, and read_state filters Anchor out — so a perfectly healthy
+        # session reads as a machine with no DNS servers at all.
+        #
+        # Believing that reading is ruinous. It differs from what was seen
+        # before, so this re-applies; the re-apply reads the same emptiness and
+        # hands the resolver an empty upstream list; and from then on every
+        # name on the machine fails to resolve, a few seconds into every
+        # session, while the blocked names go on being blocked correctly. The
+        # user sees a focus session that took the whole internet away.
+        #
+        # A network that has genuinely lost every server looks identical from
+        # here, and between the two readings this is the safe one: keeping the
+        # servers that were working costs nothing if they have gone, and
+        # forwarding to nothing is a total outage either way (P4).
+        current = replace(current, upstreams=list(previous.upstreams))
+
     if current.fingerprint() == previous.fingerprint():
         return None
 
@@ -173,7 +202,13 @@ def follow_network_changes(
         len(current.links),
         len(current.upstreams),
     )
-    return apply(journal, runner=runner, resolver_port=resolver_port, drop_in=drop_in)
+    return apply(
+        journal,
+        runner=runner,
+        resolver_port=resolver_port,
+        drop_in=drop_in,
+        known_upstreams=current.upstreams,
+    )
 
 
 #: Where a machine without systemd-resolved says its DNS servers are.
