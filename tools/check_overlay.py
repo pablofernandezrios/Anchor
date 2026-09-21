@@ -41,7 +41,10 @@ Your screen is covered for about half a minute by a break screen counting
 down. Nothing is blocked, nothing is closed, and no session is started.
 
 While it is up, please try two things:
-  1. Alt-Tab away from it, or click another window.
+  1. Alt-Tab away from it, or click another window, and then watch: Anchor
+     cannot stop you switching away, and does not try. It asks for the screen
+     back every few seconds instead, and what the compositor does with that
+     is what this check is for.
   2. If you have a second monitor, look at it.
 
 Ctrl-C in this terminal ends it early.
@@ -258,6 +261,17 @@ def main(argv: list[str] | None = None) -> int:
     if clicked:
         report.add("the buttons", "works", f"{clicked[0]} was clicked and reached the agent")
 
+    report.add(
+        "asking for it back",
+        "works" if overlay.attempts else "unavailable",
+        (
+            f"the compositor was asked {overlay.attempts} time(s) to bring the "
+            "overlay back while another window had focus"
+            if overlay.attempts
+            else "the overlay never lost focus, so nothing was asked"
+        ),
+    )
+
     ask(
         report,
         "covering the screen",
@@ -275,8 +289,11 @@ def main(argv: list[str] | None = None) -> int:
     ask(
         report,
         "switching away",
-        "You tried to Alt-Tab away or click another window. What happened? "
-        "(it came back / it stayed away / I could not switch away at all)",
+        "You tried to Alt-Tab away or click another window.\n"
+        "Switching away is EXPECTED: on Wayland no ordinary program can stop "
+        "it, which is what ADR 2 settled. The question is what happened next.\n"
+        "(it came back on its own / it flashed or highlighted in the dock / "
+        "nothing happened at all)",
         assume_yes=args.yes,
     )
     ask(

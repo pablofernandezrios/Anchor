@@ -8,8 +8,14 @@ ADR 2 settled what this can and cannot do. On Wayland an ordinary client
 cannot stay above everything else, cannot grab the keyboard, and cannot stop
 the user switching away — and none of that is a defect to engineer around. So
 the overlay does not trap anyone. It covers every monitor, it says what is
-happening, and if it loses focus it asks the compositor to present it again.
-Whether the compositor agrees is the compositor's decision.
+happening, and while it is not the focused window it keeps asking the
+compositor to bring it back. Whether the compositor agrees is the compositor's
+decision, and on GNOME the answer is often to mark the window as wanting
+attention rather than to raise it.
+
+Asking *steadily* rather than once is the part that makes ADR 2's promise
+real. A single request when focus is lost is a request that can be ignored,
+after which Anchor would go quiet for the rest of the break.
 
 A break therefore ends when its time is up, not when the user dismisses it.
 """
@@ -25,10 +31,26 @@ from anchor.agent.breakscreen import BreakScreen
 
 log = logging.getLogger("anchor-agent")
 
-#: How long to leave the window alone after asking for it to be presented.
-#: Without this, a compositor that refuses gets asked again on every focus
+#: How often to ask, at most, while the overlay is not the focused window.
+#: Without a limit a compositor that refuses gets asked again on every focus
 #: change it causes, which is a loop with a user inside it.
 REPRESENT_SECONDS = 3.0
+
+
+def should_reassert(*, showing: bool, active: bool, since_last: float) -> bool:
+    """Whether to ask the compositor to bring the overlay back (ADR 2).
+
+    Kept here, away from GTK, because it is the only decision in this module
+    and the first run on a real desktop showed it mattered: asking once when
+    focus is lost is not "the overlay reasserts itself", it is a single
+    request a compositor is free to ignore, after which Anchor goes quiet for
+    the rest of the break. Asking again, steadily, is the whole of what ADR 2
+    promised — and the whole of what Wayland allows.
+    """
+    if not showing or active:
+        return False
+    return since_last >= REPRESENT_SECONDS
+
 
 STYLE = b"""
 window.anchor-break {
@@ -95,6 +117,9 @@ class BreakOverlay:
         self._buttons: dict[str, list[Any]] = {}
         self._last_present = 0.0
         self._showing = False
+        self._watch: int | None = None
+        self.attempts = 0
+        """How many times the compositor has been asked to bring it back."""
 
     @property
     def showing(self) -> bool:
@@ -115,9 +140,16 @@ class BreakOverlay:
             for window in self._windows:
                 window.present()
             self._showing = True
+            # Steadily, not once. A single request when focus is lost is a
+            # request the compositor can ignore, after which Anchor says
+            # nothing for the rest of the break (ADR 2).
+            self._watch = self._glib.timeout_add(int(REPRESENT_SECONDS * 1000), self._reassert)
 
     def hide(self) -> None:
         """Take it down. The break is over, one way or another."""
+        if self._watch is not None:
+            self._glib.source_remove(self._watch)
+            self._watch = None
         for window in self._windows:
             window.destroy()
         self._windows.clear()
@@ -218,14 +250,29 @@ class BreakOverlay:
     # -- keeping it there ------------------------------------------------
 
     def _focus_changed(self, window: Any, *_args: object) -> None:
-        """Ask to be presented again, at most every few seconds (ADR 2)."""
-        if not self._showing or window.is_active():
+        """Losing focus is answered at once, and then by the timer."""
+        self._ask_again(active=window.is_active())
+
+    def _reassert(self) -> bool:
+        """Keep asking for as long as the break lasts (ADR 2)."""
+        if not self._showing:
+            return False
+        self._ask_again(active=any(window.is_active() for window in self._windows))
+        return True
+
+    def _ask_again(self, *, active: bool) -> None:
+        if not should_reassert(
+            showing=self._showing,
+            active=active,
+            since_last=time.monotonic() - self._last_present,
+        ):
             return
-        now = time.monotonic()
-        if now - self._last_present < REPRESENT_SECONDS:
-            return
-        self._last_present = now
-        window.present()
+
+        self._last_present = time.monotonic()
+        self.attempts += 1
+        for window in self._windows:
+            window.present()
+        log.debug("asked the compositor to bring the overlay back (%d)", self.attempts)
 
     # -- the buttons -----------------------------------------------------
 

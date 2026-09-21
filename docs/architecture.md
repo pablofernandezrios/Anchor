@@ -387,10 +387,18 @@ minutes is long enough to lose an hour in one.
 [ADR 2](adr/0002-what-a-break-can-and-cannot-enforce.md) settled what a break
 can enforce on Wayland: a fullscreen window on every monitor is achievable and
 keeping the user inside it is not. So the overlay does not try. It covers
-every monitor, says what is happening, and if it loses focus it asks the
-compositor to present it again — at most every few seconds, because a
-compositor that refuses would otherwise be asked again on every focus change
-it causes, which is a loop with a user inside it.
+every monitor, says what is happening, and while another window has focus it
+keeps asking the compositor to bring it back — every few seconds for as long
+as the break lasts, never faster, because a compositor that refuses would
+otherwise be asked again on every focus change it causes, which is a loop with
+a user inside it.
+
+*Keeps* asking is the part that matters, and it is the part that was wrong
+first time round: asking once when focus is lost is a single request a
+compositor is free to ignore, after which Anchor would go quiet for the rest
+of the break. What GNOME does with those requests is GNOME's decision — often
+to mark the window as wanting attention rather than to raise it — and that is
+where ADR 2's promise ends. Anchor asks; it does not seize.
 
 A monitor plugged in mid-break gets a window too, rather than becoming the one
 screen with the distraction on it.
