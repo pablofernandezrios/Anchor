@@ -18,6 +18,7 @@ Requires:       nftables
 Requires:       systemd
 Recommends:     gtk4
 Recommends:     libadwaita
+# Carries the indicator and the notifications as well as the interface.
 Recommends:     python3-gobject
 
 %description

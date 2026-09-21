@@ -17,6 +17,8 @@ Depends: ${python3:Depends},
 Recommends: gir1.2-gtk-4.0,
             gir1.2-adw-1,
             python3-gi
+# python3-gi carries the indicator and the notifications as well as the
+# interface. Without it Anchor still blocks; it just says nothing.
 Suggests: gnome-shell-extension-appindicator
 Description: Focus tool that blocks websites and applications
  Anchor blocks websites and applications during focus sessions, enforces
