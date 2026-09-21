@@ -342,6 +342,14 @@ can be disabled, enabled, or arrive after the agent.
 Drawing is handed to the desktop's own thread. The feed runs on its own, and
 D-Bus is not the place to find out what happens when two threads meet.
 
+Which signals a change needs is worked out by a plain function, away from the
+bus, because that is the part that has already been wrong. The panel turns a
+signal name into a property name by removing its prefix, so the countdown is
+announced as `XAyatanaNewLabel` and not `NewLabel`: the second asks the panel
+to re-read a property called `Label`, which this interface does not have, and
+the label sits still for the whole session. The first run on a real desktop is
+what found it. Spike 4 could not: its label never moved.
+
 ## Anti-evasion
 
 Everything here is friction rather than a lock, as P2 requires, and each piece

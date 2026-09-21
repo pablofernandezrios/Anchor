@@ -53,6 +53,16 @@ HOUR = 3600
 #: rather than sitting still while you look at it.
 COUNTDOWN = (2 * HOUR + 14 * 60, 61 * 60, 59 * 60, 60, 0)
 
+#: One at a time, seconds apart. Sent together they would be right and look
+#: wrong: the closure replaces the warning on purpose — in a real session two
+#: minutes later — so all three at once leaves the middle one on screen for a
+#: millisecond. That is what made the first run report a missing notification.
+NOTIFICATIONS: tuple[tuple[int, str, dict[str, Any]], ...] = (
+    (1_500, "blocked.attempt", {"domain": "youtube.com", "rule": "youtube.com"}),
+    (6_000, "apps.grace", {"apps": ["Discord", "Slack"], "seconds": 120}),
+    (14_000, "apps.closed", {"apps": ["Discord"], "reason": "launch"}),
+)
+
 SAMPLE_STATUS: dict[str, Any] = {
     "active": True,
     "profile": "Study",
@@ -175,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default="check-results", help="Where to write the findings.")
     parser.add_argument("--yes", action="store_true", help="Do not stop to ask anything.")
     parser.add_argument(
-        "--seconds", type=float, default=6.0, help="How long to hold each countdown step."
+        "--seconds", type=float, default=5.0, help="How long to hold each countdown step."
     )
     args = parser.parse_args(argv)
 
@@ -256,22 +266,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"    top bar should read {view.label}", flush=True)
         return True
 
-    def notify() -> bool:
-        for event, payload in (
-            ("blocked.attempt", {"domain": "youtube.com", "rule": "youtube.com"}),
-            ("apps.grace", {"apps": ["Discord", "Slack"], "seconds": 120}),
-            ("apps.closed", {"apps": ["Discord"], "reason": "launch"}),
-        ):
-            notification = plan(event, payload)
-            if notification is not None:
-                notifier.send(notification)
-                print(f"    sent: {notification.summary}", flush=True)
+    def notify(event: str, payload: dict[str, Any]) -> bool:
+        notification = plan(event, payload)
+        if notification is not None:
+            notifier.send(notification)
+            print(f"    sent: {notification.summary}", flush=True)
         return False
 
     try:
         tick()
         GLib.timeout_add(int(args.seconds * 1000), tick)
-        GLib.timeout_add(1500, notify)
+        for delay, event, payload in NOTIFICATIONS:
+            GLib.timeout_add(delay, notify, event, payload)
         loop.run()
 
         # Hide it the way the end of a session does, and leave nothing behind.
@@ -304,9 +310,11 @@ def main(argv: list[str] | None = None) -> int:
     ask(
         report,
         "the notifications",
-        "Three notifications: a blocked site, a two-minute warning, and a "
-        "closed application. Did all three appear, and did the warning stay "
-        "on screen rather than fading? (describe what you saw)",
+        "Three notifications, seconds apart: a blocked site, then a "
+        "two-minute warning, then a closed application. The third is meant to "
+        "replace the second, the way it will when the applications really "
+        "close. Did all three appear, and did the warning stay put until the "
+        "third replaced it? (describe what you saw)",
         assume_yes=args.yes,
     )
     ask(

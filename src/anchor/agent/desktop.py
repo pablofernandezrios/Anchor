@@ -68,13 +68,55 @@ ITEM_XML = """
     <signal name="NewTitle"/>
     <signal name="NewToolTip"/>
     <signal name="NewStatus"><arg type="s" name="status"/></signal>
-    <signal name="NewLabel">
+    <signal name="XAyatanaNewLabel">
       <arg type="s" name="label"/>
       <arg type="s" name="guide"/>
     </signal>
   </interface>
 </node>
 """
+
+
+#: The arguments each signal carries, as a D-Bus signature. ``None`` means the
+#: signal has none and the watcher re-reads the properties itself.
+SIGNAL_TYPES: dict[str, str | None] = {
+    "NewIcon": None,
+    "NewTitle": None,
+    "NewToolTip": None,
+    "NewStatus": "(s)",
+    # Named after its property, not "NewLabel". The panel turns a signal name
+    # into a property name by taking off the "New" — or, for this one, the
+    # "XAyatanaNew" — so a signal called NewLabel asks it to re-read a property
+    # called Label, which does not exist, and the label never changes. This is
+    # what the first run on a real desktop found, and spike 4 could not: its
+    # label never moved.
+    "XAyatanaNewLabel": "(ss)",
+}
+
+
+def signals_for(before: IndicatorView, after: IndicatorView) -> list[tuple[str, tuple[str, ...]]]:
+    """Which signals a change from ``before`` to ``after`` needs.
+
+    Only what changed. A panel that is told everything changed re-reads
+    everything, every second, for the whole session.
+    """
+    changes: list[tuple[str, tuple[str, ...]]] = []
+    if before.icon != after.icon:
+        changes.append(("NewIcon", ()))
+    if before.title != after.title:
+        changes.append(("NewTitle", ()))
+    if before.label != after.label or before.guide != after.guide:
+        changes.append(("XAyatanaNewLabel", (after.label, after.guide)))
+    if before.tooltip != after.tooltip:
+        changes.append(("NewToolTip", ()))
+    if before.visible != after.visible:
+        changes.append(("NewStatus", (status_word(after),)))
+    return changes
+
+
+def status_word(view: IndicatorView) -> str:
+    """``Active`` while a session runs, ``Passive`` when the item is hidden."""
+    return "Active" if view.visible else "Passive"
 
 
 class DesktopUnavailableError(RuntimeError):
@@ -196,20 +238,13 @@ class TrayItem:
     def show(self, view: IndicatorView) -> None:
         """Take a new view, and tell the panel only what changed."""
         before, self._view = self._view, view
-        if before == view:
-            return
-
-        if before.icon != view.icon:
-            self._emit("NewIcon")
-        if before.label != view.label or before.guide != view.guide:
-            self._emit("NewLabel", self._glib.Variant("(ss)", (view.label, view.guide)))
-        if before.tooltip != view.tooltip:
-            self._emit("NewToolTip")
-        if before.visible != view.visible:
-            self._emit("NewStatus", self._glib.Variant("(s)", (self._status(),)))
+        for signal, arguments in signals_for(before, view):
+            signature = SIGNAL_TYPES[signal]
+            body = self._glib.Variant(signature, arguments) if signature else None
+            self._emit(signal, body)
 
     def _status(self) -> str:
-        return "Active" if self._view.visible else "Passive"
+        return status_word(self._view)
 
     def _emit(self, signal: str, body: Any = None) -> None:
         try:
