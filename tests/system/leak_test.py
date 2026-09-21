@@ -39,6 +39,9 @@ BLOCKED = "example.com"
 #: A name the session does not block, to show the machine still works.
 ALLOWED = "github.com"
 
+#: Second opinions, for telling an over-blocking Anchor from a bad network.
+OTHER_ALLOWED = ("debian.org", "kernel.org")
+
 #: A DoH endpoint from the shipped list, and a DoT one.
 DOH_ADDRESS = "1.1.1.1"
 DOT_ADDRESS = "1.1.1.1"
@@ -51,8 +54,17 @@ class Check:
     name: str
     leaked: bool
     detail: str
+    unanswered: bool = False
+    """The environment, not Anchor, made this one impossible to judge.
+
+    Not a leak and not a pass. A check that cannot tell "Anchor is wrong" from
+    "the network is down" reports one of them confidently and is wrong half
+    the time, which is the lesson the .invalid probe taught in Milestone 0.
+    """
 
     def line(self) -> str:
+        if self.unanswered:
+            return f"[????] {self.name}: {self.detail}"
         return f"[{'LEAK' if self.leaked else 'ok  '}] {self.name}: {self.detail}"
 
 
@@ -60,8 +72,8 @@ class Check:
 class Report:
     checks: list[Check] = field(default_factory=list)
 
-    def add(self, name: str, leaked: bool, detail: str) -> None:
-        check = Check(name, leaked, detail)
+    def add(self, name: str, leaked: bool, detail: str, *, unanswered: bool = False) -> None:
+        check = Check(name, leaked, detail, unanswered)
         self.checks.append(check)
         print(check.line(), flush=True)
 
@@ -87,6 +99,36 @@ def rcode_of(packet: bytes) -> int:
 
     flags: int = struct.unpack(">H", packet[2:4])[0]
     return flags & 0x000F
+
+
+def resolves(name: str, *, attempts: int = 3) -> bool:
+    """Whether ``name`` resolves, giving a busy machine more than one go.
+
+    A single UDP query lost on a loaded runner is ordinary, and one lost query
+    is not evidence about Anchor.
+    """
+    for attempt in range(attempts):
+        if run("getent", "hosts", name).stdout.strip():
+            return True
+        if attempt + 1 < attempts:
+            time.sleep(1.0)
+    return False
+
+
+def upstream_answers(name: str, server: str = "1.1.1.1") -> bool:
+    """Ask a public resolver directly, from outside Anchor's redirect.
+
+    Used only to tell an over-blocking Anchor from a network that is simply
+    not answering: during a session the redirect sends this to Anchor too, so
+    it is asked after the session has ended.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(5)
+            sock.sendto(dns_query(name), (server, 53))
+            return rcode_of(sock.recv(4096)) == 0
+    except OSError:
+        return False
 
 
 # -- the five ways around ---------------------------------------------------
@@ -150,6 +192,41 @@ def check_doh_endpoint(report: Report) -> None:
         return
 
     report.add("DoH endpoint", True, f"connected to {DOH_ADDRESS}:443")
+
+
+def check_an_unblocked_site(report: Report) -> None:
+    """The control: blocking one name must not block the rest of the internet.
+
+    This is the row that catches over-blocking, so it has to be able to say
+    what went wrong. A name that will not resolve during a session means
+    either that Anchor is blocking too much — serious — or that the machine's
+    own network is having a bad minute, which says nothing about Anchor. The
+    two look identical from one failed lookup, so this asks again, and then
+    asks whether anything at all can be resolved.
+    """
+    if resolves(ALLOWED):
+        report.add("an unblocked site still works", False, f"{ALLOWED} resolves")
+        return
+
+    others = [name for name in OTHER_ALLOWED if resolves(name, attempts=1)]
+    if others:
+        # Something else resolves, so name resolution works and this one name
+        # does not. That is Anchor's problem.
+        report.add(
+            "an unblocked site still works",
+            True,
+            f"{ALLOWED} did NOT resolve, though {others[0]} did",
+        )
+        return
+
+    report.add(
+        "an unblocked site still works",
+        False,
+        f"nothing resolved during the session, not {ALLOWED} nor "
+        f"{', '.join(OTHER_ALLOWED)}. Either Anchor is blocking everything or "
+        "this machine has no working DNS at all; the row below tells them apart",
+        unanswered=True,
+    )
 
 
 def check_cached_address(report: Report, address: str | None) -> None:
@@ -257,12 +334,7 @@ def main() -> int:
         check_doh_endpoint(report)
         check_cached_address(report, cached)
 
-        allowed = run("getent", "hosts", ALLOWED)
-        report.add(
-            "an unblocked site still works",
-            not allowed.stdout.strip(),
-            f"{ALLOWED} resolves" if allowed.stdout.strip() else f"{ALLOWED} did NOT resolve",
-        )
+        check_an_unblocked_site(report)
     finally:
         for process in (blocker, engine):
             process.terminate()
@@ -279,12 +351,31 @@ def main() -> int:
             capture_output=True,
         )
 
-    after = run("getent", "hosts", ALLOWED)
+    working = resolves(ALLOWED)
     report.add(
         "the machine is left working",
-        not after.stdout.strip(),
-        "name resolution works after the session" if after.stdout.strip() else "DNS IS BROKEN",
+        not working,
+        "name resolution works after the session" if working else "DNS IS BROKEN",
     )
+
+    # The control row may have been left unanswered because nothing resolved
+    # during the session. Now there is a second measurement: if everything
+    # resolves the moment Anchor's rules come down, the rules were the reason.
+    # A network outage that started with the session and ended with it would
+    # be quite a coincidence.
+    for check in report.checks:
+        if check.unanswered and check.name == "an unblocked site still works":
+            if working and upstream_answers(ALLOWED):
+                check.unanswered = False
+                check.leaked = True
+                check.detail = (
+                    f"nothing resolved during the session, and {ALLOWED} resolves "
+                    "again now that the rules are gone: Anchor was blocking too much"
+                )
+            else:
+                check.detail += " — and DNS was broken afterwards too, so this "
+                check.detail += "machine's network is the likelier explanation"
+            print(f"      (revised) {check.line()}", flush=True)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "leak-results.json").write_text(
