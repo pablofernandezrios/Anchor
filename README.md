@@ -53,8 +53,38 @@ Every use of the valve is recorded.
 
 ## Install
 
-Packages for Debian/Ubuntu, Fedora and Arch ship with the first release. This
-section will carry the real commands once `0.1.0` is tagged.
+On Ubuntu 24.04 or later and Debian 13, build the package and install it:
+
+```sh
+sh tools/build_deb.sh
+sudo dpkg -i dist/anchor_0.1.0_all.deb
+sudo apt-get -f install    # pulls in anything missing
+```
+
+Installing enables `anchord` and `anchor-blockerd`, and records the desktop
+user's UID in `/etc/anchor/anchor.toml`. If it could not work out who that is
+— on a machine with several logins, or none — it says so and tells you which
+line to set. Then:
+
+```sh
+systemctl restart anchord
+systemctl --user enable --now anchor-agent   # indicator, notifications, breaks
+```
+
+`anchor doctor` says whether all of that took. Removing the package restores
+the DNS configuration, deletes the firewall table and takes back the browser
+policies, whether or not a session is running (SPEC 7.6).
+
+Building needs `debhelper`, `dh-python`, `pybuild-plugin-pyproject`,
+`python3-all`, `python3-setuptools` and `python3-pytest`.
+
+The RPM and Arch packaging under `packaging/` is written and checked by tests
+but has never been built; only the `.deb` has been built and installed.
+
+Running from a checkout works for the command line and the interface, but not
+for blocking: the daemons need to be root, to find their lists in
+`/usr/share/anchor`, and to be started by systemd. The package is what puts
+those three things in place, so a checkout is for development rather than use.
 
 ## Quick start
 

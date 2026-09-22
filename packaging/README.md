@@ -1,7 +1,16 @@
 # Packaging
 
-Skeletons for the three package formats SPEC 17 requires. They are structure,
-not finished packages: building and publishing land in Milestone 9.
+The three package formats SPEC 17 requires.
+
+The `.deb` is built and installed; the other two are still skeletons, checked
+by tests but never built. Building the first one found four defects nothing
+else would have: two missing build dependencies, a test step that could not
+import the package it was testing, and a set of links that shipped the whole
+source tree inside the binary package.
+
+    sh tools/build_deb.sh          # writes dist/anchor_<version>_all.deb
+    sudo dpkg -i dist/anchor_*.deb
+    sudo apt-get -f install        # if anything is missing
 
 | Directory | Format | Target |
 |---|---|---|
