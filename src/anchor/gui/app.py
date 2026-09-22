@@ -38,6 +38,7 @@ from anchor.blocker.apps import discover
 from anchor.gui import home as home_model
 from anchor.gui import lists as lists_model
 from anchor.gui import onboarding as onboarding_model
+from anchor.gui import outage as outage_model
 from anchor.gui import profiles as profiles_model
 from anchor.gui import schedules as schedules_model
 from anchor.gui import settings as settings_model
@@ -214,9 +215,20 @@ class AnchorWindow(Adw.ApplicationWindow):
         self.link.ask_all([("profile.list", {}), ("category.list", {})], self._profiles_loaded)
 
     def _profiles_loaded(self, reply: Reply) -> None:
+        if not reply.ok:
+            self._blank(self.profiles, reply)
+            return
         self.profile_names = tuple(reply.result.get("profile.list", {}).get("profiles", ()))
         self.categories = list(reply.result.get("category.list", {}).get("categories", []))
         if not self.profile_names:
+            # Nothing is wrong; there is simply nothing yet. A machine whose
+            # configuration has been deleted lands here.
+            self.profiles.nothing(
+                outage_model.Outage(
+                    title=_("No profiles yet"),
+                    detail=_("A profile is what a session blocks. Create one to begin."),
+                )
+            )
             return
         if self.profile_name not in self.profile_names:
             self.profile_name = self.profile_names[0]
@@ -224,7 +236,7 @@ class AnchorWindow(Adw.ApplicationWindow):
 
     def _profile_loaded(self, reply: Reply) -> None:
         if not reply.ok:
-            self._complain(reply)
+            self._blank(self.profiles, reply)
             return
         self.profile = reply.result.get("profile", {})
         self.profiles.show(
@@ -245,7 +257,7 @@ class AnchorWindow(Adw.ApplicationWindow):
 
     def _schedules_loaded(self, reply: Reply) -> None:
         if not reply.ok:
-            self._complain(reply)
+            self._blank(self.schedules, reply)
             return
         self.schedules.show(
             schedules_model.schedule_grid(
@@ -260,7 +272,7 @@ class AnchorWindow(Adw.ApplicationWindow):
 
     def _lists_loaded(self, reply: Reply) -> None:
         if not reply.ok:
-            self._complain(reply)
+            self._blank(self.lists, reply)
             return
         self.categories = list(reply.result.get("categories", []))
         self.lists.show(
@@ -281,7 +293,7 @@ class AnchorWindow(Adw.ApplicationWindow):
 
     def _stats_loaded(self, reply: Reply) -> None:
         if not reply.ok:
-            self._complain(reply)
+            self._blank(self.statistics, reply)
             return
         self.statistics.show(
             stats_model.stats_view(
@@ -295,7 +307,7 @@ class AnchorWindow(Adw.ApplicationWindow):
 
     def _settings_loaded(self, reply: Reply) -> None:
         if not reply.ok:
-            self._complain(reply)
+            self._blank(self.settings, reply)
             return
         self.settings.show(
             settings_model.settings_view(
@@ -570,6 +582,11 @@ class AnchorWindow(Adw.ApplicationWindow):
         self.link.ask(type_, payload, lambda _reply: None)
 
     # -- saying things ---------------------------------------------------
+
+    def _blank(self, page: Any, reply: Reply) -> None:
+        """A failed load: say so on the page, not only in a passing toast."""
+        self._complain(reply)
+        page.nothing(outage_model.outage(reply.code, reply.message))
 
     def _complain(self, reply: Reply) -> None:
         """Show the engine's own words. A refusal is an answer (SPEC 7.4)."""

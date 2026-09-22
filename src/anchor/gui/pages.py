@@ -28,6 +28,7 @@ from anchor.gui import schedules as schedules_model
 from anchor.gui import settings as settings_model
 from anchor.gui import stats as stats_model
 from anchor.gui.i18n import _
+from anchor.gui.outage import Outage
 from anchor.gui.widgets import (
     BarChart,
     WeekGrid,
@@ -58,6 +59,21 @@ class Page(Gtk.ScrolledWindow):
         clamp.set_margin_start(18)
         clamp.set_margin_end(18)
         self.set_child(clamp)
+
+    def nothing(self, view: Outage) -> None:
+        """Draw why there is nothing here, instead of nothing.
+
+        Every screen needs this, so it lives on the base class: a page that
+        asked the engine and got no answer must still say something. The toast
+        that used to be the whole of it is gone in six seconds and takes the
+        explanation with it.
+        """
+        clear(self.content)
+        status = Adw.StatusPage(title=view.title, description=view.detail)
+        status.set_icon_name(first_icon("network-offline-symbolic", "dialog-warning-symbolic"))
+        self.content.append(status)
+        if view.remedy:
+            self.content.append(Gtk.Label(label=view.remedy, css_classes=["dim-label"], wrap=True))
 
 
 class HomePage(Page):

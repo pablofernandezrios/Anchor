@@ -1095,3 +1095,24 @@ msgstr "horarios saltados"
 #: src/anchor/gui/stats.py:278
 msgid "tampering"
 msgstr "manipulaciones"
+
+msgid "No profiles yet"
+msgstr "Aún no hay perfiles"
+
+msgid "A profile is what a session blocks. Create one to begin."
+msgstr "Un perfil es lo que bloquea una sesión. Crea uno para empezar."
+
+msgid "Anchor is not running"
+msgstr "Anchor no está en marcha"
+
+msgid "The engine is what decides and records everything, so there is nothing to show until it is running."
+msgstr "El motor es quien decide y registra todo, así que no hay nada que mostrar hasta que esté en marcha."
+
+msgid "Start it with: systemctl start anchord"
+msgstr "Arráncalo con: systemctl start anchord"
+
+msgid "This could not be loaded"
+msgstr "Esto no se pudo cargar"
+
+msgid "Anchor asked its engine and got no usable answer."
+msgstr "Anchor preguntó a su motor y no obtuvo una respuesta utilizable."
