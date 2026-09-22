@@ -8,7 +8,12 @@ from pathlib import Path
 import pytest
 
 import anchor.gui.i18n as i18n
-from anchor.gui.i18n import _, languages_for, setup
+from anchor.gui.i18n import _, languages_for
+
+# Never imported by name: a module-level `setup` is pytest 7's xunit hook, so
+# pytest calls it with the module as its argument and every test in the file
+# errors before it runs. pytest 8 dropped the hook, which is why this passed
+# here and broke inside the package build, on the pytest Ubuntu ships.
 
 
 @pytest.fixture(autouse=True)
@@ -98,7 +103,7 @@ class TestWithoutAnyTranslations:
     ) -> None:
         """A checkout with nothing compiled must still run, in English."""
         monkeypatch.setattr(i18n, "_SEARCH", (tmp_path,))
-        setup("es")
+        i18n.setup("es")
 
         assert _("Start session") == "Start session"
 
@@ -106,7 +111,7 @@ class TestWithoutAnyTranslations:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(i18n, "_SEARCH", (tmp_path,))
-        translate = setup("")
+        translate = i18n.setup("")
 
         assert translate("Home") == _("Home")
 
@@ -135,7 +140,7 @@ class TestWithTheSpanishCatalogue:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(i18n, "_SEARCH", (self.compiled(tmp_path),))
-        setup("es")
+        i18n.setup("es")
 
         assert _("Start session") == "Empezar sesión"
 
@@ -144,7 +149,7 @@ class TestWithTheSpanishCatalogue:
     ) -> None:
         """There is no English catalogue: the source is the English."""
         monkeypatch.setattr(i18n, "_SEARCH", (self.compiled(tmp_path),))
-        setup("en")
+        i18n.setup("en")
 
         assert _("Start session") == "Start session"
 
@@ -153,6 +158,6 @@ class TestWithTheSpanishCatalogue:
     ) -> None:
         """The failure the catalogue test guards against, from the other end."""
         monkeypatch.setattr(i18n, "_SEARCH", (self.compiled(tmp_path),))
-        setup("es")
+        i18n.setup("es")
 
         assert _("Started at {time}").format(time="09:30") == "Empezó a las 09:30"

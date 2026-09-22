@@ -1,0 +1,8 @@
+anchor (0.1.0) unstable; urgency=medium
+
+  * First release. A focus and blocking tool for the GNOME desktop:
+    sessions with three levels and a one-way ratchet, DNS and application
+    blocking enforced by root daemons, breaks, weekly schedules, statistics
+    kept locally, and a GTK4 interface in English and Spanish.
+
+ -- Pablo Fernández Ríos <fernandezriospablo06@gmail.com>  Mon, 22 Sep 2026 12:00:00 +0000

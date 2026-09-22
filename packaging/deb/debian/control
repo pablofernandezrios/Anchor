@@ -2,7 +2,12 @@ Source: anchor
 Section: utils
 Priority: optional
 Maintainer: Pablo Fernández Ríos <fernandezriospablo06@gmail.com>
-Build-Depends: debhelper-compat (= 13), dh-python, python3-all (>= 3.12), python3-setuptools
+Build-Depends: debhelper-compat (= 13),
+               dh-python,
+               pybuild-plugin-pyproject,
+               python3-all (>= 3.12),
+               python3-pytest,
+               python3-setuptools
 Standards-Version: 4.7.0
 Homepage: https://github.com/pablofernandezrios/anchor
 Rules-Requires-Root: no

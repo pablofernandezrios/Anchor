@@ -18,4 +18,22 @@ override_dh_installsystemd:
 
 override_dh_auto_test:
 	# Only the tests that need neither root, systemd nor a display.
-	python3 -m pytest -m "not needs_root and not needs_systemd and not needs_display"
+	#
+	# Through pybuild rather than calling pytest directly: pybuild runs them
+	# against the package it has just built, with PYTHONPATH pointing at it.
+	# A bare `python3 -m pytest` here tests nothing, because `anchor` is not
+	# importable yet, and the build fails on eighteen collection errors.
+	#
+	# pybuild builds in a directory holding only the unpacked wheel, and a
+	# fifth of the suite reads the repository around it: the shipped lists
+	# and categories under data/, the catalogue tools, the packaging files,
+	# the source itself for the standard-library guard. They are pointed at
+	# the real ones rather than skipped, so the package is tested with the
+	# data it will actually install.
+	for d in $(CURDIR)/.pybuild/*/build; do \
+	  for name in data tools po packaging src; do \
+	    ln -sfn $(CURDIR)/$$name $$d/$$name; \
+	  done; \
+	done
+	PYBUILD_TEST_ARGS="-m 'not needs_root and not needs_systemd and not needs_display'" \
+	  dh_auto_test
