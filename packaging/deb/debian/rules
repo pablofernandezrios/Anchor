@@ -37,3 +37,12 @@ override_dh_auto_test:
 	done
 	PYBUILD_TEST_ARGS="-m 'not needs_root and not needs_systemd and not needs_display'" \
 	  dh_auto_test
+	# And taken away again. dh_auto_install copies this directory wholesale,
+	# so a link left behind ships the repository inside the package: the
+	# first build put data/, po/, src/, tools/ and packaging/ into
+	# /usr/lib/python3/dist-packages as if they were Python packages.
+	for d in $(CURDIR)/.pybuild/*/build; do \
+	  for name in data tools po packaging src; do \
+	    rm -f $$d/$$name; \
+	  done; \
+	done
