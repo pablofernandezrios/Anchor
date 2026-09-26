@@ -6,21 +6,30 @@ Documentation=https://github.com/pablofernandezrios/anchor
 After=local-fs.target
 Before=anchor-blockerd.service
 
+# A crash during an active block must leave the block standing (SPEC P4), so
+# the service is restarted rather than allowed to give up. Without a start
+# limit systemd would stop trying after a few rapid failures.
+#
+# In [Unit], not [Service]: systemd parses it here and ignores it there, with
+# only a warning in the journal. Placed wrongly it does nothing at all, and
+# the service gives up after five restarts in ten seconds -- which is exactly
+# the moment the promise matters.
+StartLimitIntervalSec=0
+
 [Service]
 Type=simple
 ExecStart=/usr/bin/anchord
 Restart=always
 RestartSec=1
 
-# A crash during an active block must leave the block standing (SPEC P4), so
-# the service is restarted rather than allowed to give up. Without a start
-# limit systemd would stop trying after a few rapid failures.
-StartLimitIntervalSec=0
-
 StateDirectory=anchor
 StateDirectoryMode=0750
 RuntimeDirectory=anchor
 RuntimeDirectoryMode=0755
+# Kept across a restart. systemd deletes a RuntimeDirectory when the
+# service stops, and the engine's socket lives in it: every restart would
+# otherwise take the socket away from clients that are mid-connection.
+RuntimeDirectoryPreserve=yes
 ConfigurationDirectory=anchor
 
 # The engine needs root to write the runtime drop-ins of SPEC 5.3, but nothing

@@ -5,14 +5,32 @@ After=anchord.service network-pre.target
 Wants=network-pre.target
 BindsTo=anchord.service
 
+# A crash during an active block must leave the block standing (SPEC P4), so
+# the service is restarted rather than allowed to give up. Without a start
+# limit systemd would stop trying after a few rapid failures.
+#
+# In [Unit], not [Service]: systemd parses it here and ignores it there, with
+# only a warning in the journal. Placed wrongly it does nothing at all, and
+# the service gives up after five restarts in ten seconds -- which is exactly
+# the moment the promise matters.
+StartLimitIntervalSec=0
+
 [Service]
 Type=simple
 ExecStart=/usr/bin/anchor-blockerd
 Restart=always
 RestartSec=1
-StartLimitIntervalSec=0
 
-RuntimeDirectory=anchor
+# /run/anchor is NOT declared here, though the blocker reads the engine's
+# socket out of it. systemd deletes a RuntimeDirectory when the service
+# that declares it stops, and it does not count how many services asked
+# for the same one: with this line present, stopping or failing the
+# blocker deleted /run/anchor and the engine's socket with it, leaving
+# anchord running and listening on a path that no longer existed. Every
+# client then said the engine was not running, and systemctl said it was.
+#
+# The engine owns the directory. This service is After= and BindsTo= it,
+# so by the time the blocker runs, the directory is already there.
 StateDirectory=anchor
 
 # The blocker owns the resolver, the nftables table and the browser policies,

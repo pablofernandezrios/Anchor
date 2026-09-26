@@ -111,3 +111,56 @@ class TestTheDesktopEntry:
     def test_the_program_is_an_entry_point(self) -> None:
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         assert "anchor-gui = " in pyproject
+
+
+UNITS = ROOT / "packaging" / "systemd"
+
+
+class TestTheServiceUnits:
+    """Two mistakes that systemd reports as a warning and then ignores.
+
+    Both were found by installing the package on a real machine, and neither
+    could have been found any other way: the units are text files nothing
+    parses until systemd does.
+    """
+
+    def sections(self, unit: Path) -> dict[str, list[str]]:
+        found: dict[str, list[str]] = {}
+        current = ""
+        for line in unit.read_text(encoding="utf-8").splitlines():
+            if line.startswith("[") and line.endswith("]"):
+                current = line
+                found[current] = []
+            elif current and line and not line.startswith("#"):
+                found[current].append(line)
+        return found
+
+    @pytest.mark.parametrize(
+        "name", ["anchord.service", "anchor-blockerd.service"], ids=lambda n: n.split(".")[0]
+    )
+    def test_the_start_limit_is_where_systemd_reads_it(self, name: str) -> None:
+        """In [Unit]. In [Service] it is a warning in the journal and nothing else.
+
+        Which would mean the daemons give up after five restarts in ten
+        seconds -- the moment SPEC P4 is about.
+        """
+        sections = self.sections(UNITS / name)
+
+        assert "StartLimitIntervalSec=0" in sections["[Unit]"]
+        assert not any(line.startswith("StartLimitIntervalSec") for line in sections["[Service]"])
+
+    def test_only_the_engine_owns_the_runtime_directory(self) -> None:
+        """systemd deletes a RuntimeDirectory when the service stops.
+
+        It does not count how many services asked for the same one, so with
+        the blocker declaring /run/anchor too, stopping the blocker deleted
+        the engine's socket and left anchord running and unreachable.
+        """
+        blocker = self.sections(UNITS / "anchor-blockerd.service")
+
+        assert not any(line.startswith("RuntimeDirectory=") for line in blocker["[Service]"])
+
+    def test_and_keeps_it_across_its_own_restarts(self) -> None:
+        engine = self.sections(UNITS / "anchord.service")
+
+        assert "RuntimeDirectoryPreserve=yes" in engine["[Service]"]
