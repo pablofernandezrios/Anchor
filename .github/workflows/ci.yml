@@ -48,6 +48,36 @@ jobs:
       - name: Coverage gate for engine logic
         run: python tools/check_coverage.py
 
+  package:
+    name: Build the .deb
+    runs-on: ubuntu-24.04
+    # Built on every push and kept as an artifact, so that installing Anchor
+    # does not start with cloning it. Building is also the only thing that
+    # checks the packaging: the first real build found two missing build
+    # dependencies, a test step that could not import what it was testing,
+    # and a set of links that shipped the source tree inside the package.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the Debian build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq debhelper dh-python pybuild-plugin-pyproject \
+            python3-all python3-setuptools python3-pytest
+      - name: Build
+        run: sh tools/build_deb.sh "$GITHUB_WORKSPACE/dist"
+      - name: Install it, and take it away again
+        run: |
+          sudo dpkg -i dist/anchor_*.deb
+          anchor --version
+          test -f /usr/share/anchor/essentials.txt
+          test -f /usr/share/applications/org.anchor.Anchor.desktop
+          sudo dpkg -r anchor
+          test ! -d /usr/share/anchor
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anchor-deb
+          path: dist/*.deb
+
   leaks:
     name: Leak tests on a real machine
     runs-on: ubuntu-24.04
