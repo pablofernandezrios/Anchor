@@ -12,6 +12,25 @@
 # Needs: debhelper, dh-python, python3-all, python3-setuptools.
 set -eu
 
+# Said here rather than left to `dpkg-buildpackage: not found`, which tells
+# somebody who has never built a Debian package nothing at all.
+missing=""
+for tool in dpkg-buildpackage dh; do
+	command -v "$tool" >/dev/null 2>&1 || missing="yes"
+done
+if [ -n "$missing" ]; then
+	cat >&2 <<'MSG'
+The Debian build tools are not installed. Anchor needs them only to build the
+package, not to run. Install them with:
+
+  sudo apt-get install -y debhelper dh-python pybuild-plugin-pyproject \
+      python3-all python3-setuptools python3-pytest
+
+Or skip building altogether: install a .deb somebody else built.
+MSG
+	exit 1
+fi
+
 root=$(cd "$(dirname "$0")/.." && pwd)
 out=${1:-$root/dist}
 work=$(mktemp -d)
