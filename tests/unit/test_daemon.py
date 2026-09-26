@@ -307,6 +307,35 @@ class TestWhatACrashLeftBehind:
         assert daemon.forget_leftovers() is False
         assert runner.calls == []
 
+    def test_a_policy_left_behind_is_cleared_even_with_no_table(
+        self, paths: Paths, lists: Lists, tmp_path: Path
+    ) -> None:
+        """The case `anchor doctor` found on a real machine.
+
+        A session leaves three things behind and they do not disappear
+        together. Firefox's DNS settings stayed locked by a policy nobody was
+        watching, while the firewall table was already gone -- and the sweep,
+        which only looked for the table, walked straight past it.
+        """
+        policy = tmp_path / "root" / "etc" / "firefox" / "policies" / "policies.json"
+        policy.parent.mkdir(parents=True)
+        policy.write_text("{}", encoding="utf-8")
+        # Firefox has to look installed for its policy to be Anchor's business.
+        (tmp_path / "root" / "usr" / "bin").mkdir(parents=True)
+        (tmp_path / "root" / "usr" / "bin" / "firefox").write_text("", encoding="utf-8")
+
+        clean = RecordingRunner({"list table": Result(code=1, err="No such file or directory")})
+        daemon = BlockerDaemon(
+            paths,
+            lists=lists,
+            runner=clean,
+            resolver_port=5391,
+            policy_root=tmp_path / "root",
+            resolved_drop_in=tmp_path / "run" / "50-anchor.conf",
+        )
+
+        assert daemon.forget_leftovers() is True
+
     def test_blocks_this_daemon_applied_are_not_leftovers(
         self, daemon: BlockerDaemon, runner: RecordingRunner
     ) -> None:

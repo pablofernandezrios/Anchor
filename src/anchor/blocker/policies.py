@@ -177,3 +177,18 @@ def apply_policies(journal: Journal, *, root: Path | None = None) -> list[str]:
         log.info("no supported browser found, so no policies were written")
 
     return configured
+
+
+def policies_written(*, root: Path | None = None) -> list[str]:
+    """Which installed browsers still carry Anchor's managed policy.
+
+    Used to notice a session's leftovers when the firewall table has already
+    gone. `anchor doctor` on a real machine reported exactly that: no session,
+    no table, and Firefox's DNS settings still locked by a policy nobody was
+    watching any more.
+    """
+    return [
+        browser.name
+        for browser in BROWSERS
+        if browser.installed(root) and _under(root, browser.policy_file).exists()
+    ]

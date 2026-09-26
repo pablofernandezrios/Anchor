@@ -29,7 +29,7 @@ from anchor.blocker.constants import JOURNAL_NAME, RESOLVED_DROP_IN, RESOLVER_PO
 from anchor.blocker.enforcement import AppEnforcer, Closure
 from anchor.blocker.journal import Journal
 from anchor.blocker.matcher import Policy, load_domain_file
-from anchor.blocker.policies import apply_policies
+from anchor.blocker.policies import apply_policies, policies_written
 from anchor.blocker.recent import RecentAnswers
 from anchor.blocker.resolved import (
     NetworkState,
@@ -296,12 +296,29 @@ class BlockerDaemon:
             return False
         self._looked_for_leftovers = True
 
-        if not rules_loaded(runner=self.runner):
+        table = rules_loaded(runner=self.runner)
+        # Not only the table. A session leaves three things behind and they do
+        # not disappear together: a machine whose table was deleted by hand,
+        # or whose reboot cleared /run but not /etc, still has the browsers'
+        # DNS settings locked by a policy nobody is watching. `anchor doctor`
+        # on a real machine reported exactly that, and told the user to run
+        # the restore themselves -- which is a fail-open promise handed back.
+        policies = policies_written(root=self.policy_root)
+        if not table and not policies:
             return False
 
         log.warning(
-            "found Anchor's firewall table loaded with no session running; "
-            "something stopped without cleaning up. Undoing it"
+            "no session is running, but Anchor left %s behind; "
+            "something stopped without cleaning up. Undoing it",
+            " and ".join(
+                filter(
+                    None,
+                    (
+                        "its firewall table" if table else "",
+                        f"browser policies for {', '.join(policies)}" if policies else "",
+                    ),
+                )
+            ),
         )
         self.undo()
         return True
