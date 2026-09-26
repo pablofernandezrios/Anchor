@@ -44,7 +44,7 @@ from anchor.gui import schedules as schedules_model
 from anchor.gui import settings as settings_model
 from anchor.gui import start as start_model
 from anchor.gui import stats as stats_model
-from anchor.gui.dialogs import OnboardingWindow, StartSessionDialog
+from anchor.gui.dialogs import NewProfileDialog, OnboardingWindow, StartSessionDialog
 from anchor.gui.engine import EngineLink, Reply
 from anchor.gui.i18n import N_, _
 from anchor.gui.pages import (
@@ -127,7 +127,7 @@ class AnchorWindow(Adw.ApplicationWindow):
 
     def _build_pages(self) -> None:
         self.home = HomePage(self._act)
-        self.profiles = ProfilesPage(self._profile_changed, self._choose_profile)
+        self.profiles = ProfilesPage(self._profile_changed, self._choose_profile, self._new_profile)
         self.schedules = SchedulesPage(self._act, self._edit_schedule)
         self.lists = ListsPage(self._remove_from_category)
         self.statistics = StatsPage(self._choose_range, self._delete_statistics)
@@ -438,6 +438,24 @@ class AnchorWindow(Adw.ApplicationWindow):
         self.link.ask(type_, payload, self._acted)
 
     # -- profiles, lists, settings ---------------------------------------
+
+    def _new_profile(self) -> None:
+        """SPEC 12, 15: a profile can be made here, not only in a terminal."""
+        NewProfileDialog(taken=self.profile_names, on_create=self._create_profile).present(self)
+
+    def _create_profile(self, new: profiles_model.NewProfile) -> None:
+        request, payload = profiles_model.create_request(new)
+        # The new profile becomes the one on screen, so that the next thing
+        # the user does is fill it in, which is the point of making it.
+        self.profile_name = new.name
+        self.link.ask(request, payload, self._profile_created)
+
+    def _profile_created(self, reply: Reply) -> None:
+        if not reply.ok:
+            self._complain(reply)
+            return
+        self._toast(_("Profile created."))
+        self._load_profiles()
 
     def _choose_profile(self, name: str) -> None:
         self.profile_name = name

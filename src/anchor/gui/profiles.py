@@ -25,6 +25,7 @@ that opens something.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -379,3 +380,51 @@ def _break_changes(before: dict[str, Any], after: dict[str, Any]) -> dict[str, A
     if before.get("long_break_every") != after.get("long_break_every"):
         changes["long_break_every"] = int(after.get("long_break_every") or 0)
     return changes
+
+
+# -- creating one -------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class NewProfile:
+    """What the create dialog has been told, and whether it is usable yet."""
+
+    name: str = ""
+    mode: str = "blocklist"
+    problem: str = ""
+
+    @property
+    def ready(self) -> bool:
+        return bool(self.name) and not self.problem
+
+
+def new_profile(name: str, *, mode: str = "blocklist", taken: Iterable[str] = ()) -> NewProfile:
+    """Judge a name before the engine is asked (SPEC 12).
+
+    The engine refuses a duplicate or an empty name too, and its refusal is
+    the one that counts. This one only exists so the Create button can be
+    insensitive instead of pushing the user into an error they could have
+    been shown a moment earlier.
+    """
+    trimmed = name.strip()
+    if not trimmed:
+        return NewProfile(name="", mode=mode, problem="")
+    if any(trimmed.casefold() == one.casefold() for one in taken):
+        return NewProfile(
+            name=trimmed,
+            mode=mode,
+            # Case-insensitively: two profiles called Study and study would
+            # be one profile as far as anyone reading a list is concerned.
+            problem=_("There is already a profile called {name}.").format(name=trimmed),
+        )
+    return NewProfile(name=trimmed, mode=mode)
+
+
+def create_request(new: NewProfile) -> tuple[str, dict[str, Any]]:
+    """What to send. Empty of rules on purpose: a profile is filled in after.
+
+    SPEC 12 has the Profiles screen edit everything a profile holds, and it
+    already does. Asking for domains and applications in the create dialog
+    would be a second, worse editor for the same thing.
+    """
+    return "profile.create", {"name": new.name, "web_mode": new.mode}

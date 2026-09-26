@@ -22,6 +22,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gtk  # noqa: E402
 
 from anchor.gui import onboarding as onboarding_model
+from anchor.gui import profiles as profiles_model
 from anchor.gui import start as start_model
 from anchor.gui.i18n import _
 from anchor.gui.widgets import box, describe, label
@@ -308,3 +309,78 @@ class OnboardingWindow(Adw.Window):
         self._tested = True
         self._next.set_sensitive(True)
         self._next.set_label(_("Finish"))
+
+
+class NewProfileDialog(Adw.Dialog):
+    """Name a profile and choose which way round it works (SPEC 12).
+
+    Nothing else. What a profile blocks is decided on the Profiles screen,
+    which is built for it; asking here as well would be a second editor for
+    the same thing, and a worse one.
+    """
+
+    def __init__(self, *, taken: tuple[str, ...], on_create: Any) -> None:
+        super().__init__(title=_("New profile"), content_width=420)
+        self._taken = taken
+        self._on_create = on_create
+        self._new = profiles_model.new_profile("", taken=taken)
+
+        self._create = Gtk.Button(label=_("Create"))
+        self._create.add_css_class("suggested-action")
+        self._create.connect("clicked", self._accept)
+        self._create.set_sensitive(False)
+
+        cancel = Gtk.Button(label=_("Cancel"))
+        cancel.connect("clicked", lambda _b: self.close())
+
+        header = Adw.HeaderBar(show_end_title_buttons=False, show_start_title_buttons=False)
+        header.pack_start(cancel)
+        header.pack_end(self._create)
+
+        self._name = Adw.EntryRow(title=_("Name"))
+        self._name.connect("changed", self._typed)
+        # Enter is how a one-field dialog is meant to be finished.
+        self._name.connect("entry-activated", self._accept)
+
+        self._mode = Adw.ComboRow(title=_("Mode"))
+        self._mode.set_model(Gtk.StringList.new([_("Blocklist"), _("Allowlist")]))
+        self._mode.set_subtitle(
+            _("A blocklist blocks what you list. An allowlist blocks the rest.")
+        )
+        self._mode.connect("notify::selected", lambda *_a: self._typed(self._name))
+
+        self._problem = Gtk.Label(xalign=0, wrap=True, visible=False)
+        self._problem.add_css_class("error")
+
+        group = Adw.PreferencesGroup()
+        group.add(self._name)
+        group.add(self._mode)
+
+        body = box(spacing=12)
+        body.set_margin_top(12)
+        body.set_margin_bottom(18)
+        body.set_margin_start(18)
+        body.set_margin_end(18)
+        body.append(group)
+        body.append(self._problem)
+
+        holder = box()
+        holder.append(header)
+        holder.append(body)
+        self.set_child(holder)
+
+    def _typed(self, entry: Any) -> None:
+        self._new = profiles_model.new_profile(
+            entry.get_text(),
+            mode="allowlist" if self._mode.get_selected() else "blocklist",
+            taken=self._taken,
+        )
+        self._problem.set_label(self._new.problem)
+        self._problem.set_visible(bool(self._new.problem))
+        self._create.set_sensitive(self._new.ready)
+
+    def _accept(self, _widget: Any) -> None:
+        if not self._new.ready:
+            return
+        self.close()
+        self._on_create(self._new)

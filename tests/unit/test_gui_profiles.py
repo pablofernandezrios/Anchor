@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from anchor.gui import profiles
 from anchor.gui.profiles import PATTERNS, edit_request, profile_view
 
 
@@ -203,3 +204,51 @@ class TestSaving:
 class TestThePatterns:
     def test_they_are_the_three_the_spec_names(self) -> None:
         assert PATTERNS == ((25, 5), (50, 10), (90, 20))
+
+
+class TestCreatingOne:
+    """The gap the owner found: the screen said "create one" and offered no way.
+
+    Only the introduction could create a profile, so a machine whose
+    configuration had been emptied -- or a user who deleted their last
+    profile -- had to reach for a terminal.
+    """
+
+    def test_a_name_is_required(self) -> None:
+        assert not profiles.new_profile("").ready
+
+    def test_whitespace_is_not_a_name(self) -> None:
+        assert not profiles.new_profile("   ").ready
+
+    def test_an_ordinary_name_is_ready(self) -> None:
+        new = profiles.new_profile("Study")
+
+        assert new.ready
+        assert new.name == "Study"
+
+    def test_the_name_is_trimmed(self) -> None:
+        assert profiles.new_profile("  Study  ").name == "Study"
+
+    def test_a_name_already_taken_is_refused(self) -> None:
+        new = profiles.new_profile("Study", taken=("Study", "Work"))
+
+        assert not new.ready
+        assert "Study" in new.problem
+
+    def test_and_the_same_name_in_another_case_too(self) -> None:
+        """Study and study would read as one profile in any list."""
+        assert not profiles.new_profile("STUDY", taken=("Study",)).ready
+
+    def test_an_empty_name_is_not_called_a_problem(self) -> None:
+        """Nothing typed yet is not a mistake, so nothing is said about it."""
+        assert profiles.new_profile("").problem == ""
+
+    def test_the_mode_is_carried(self) -> None:
+        assert profiles.new_profile("Write", mode="allowlist").mode == "allowlist"
+
+    def test_the_request_asks_for_a_profile_with_no_rules(self) -> None:
+        """It is filled in on the screen that exists for filling it in."""
+        request, payload = profiles.create_request(profiles.new_profile("Study"))
+
+        assert request == "profile.create"
+        assert payload == {"name": "Study", "web_mode": "blocklist"}

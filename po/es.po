@@ -1116,3 +1116,21 @@ msgstr "Esto no se pudo cargar"
 
 msgid "Anchor asked its engine and got no usable answer."
 msgstr "Anchor preguntó a su motor y no obtuvo una respuesta utilizable."
+
+msgid "Profile created."
+msgstr "Perfil creado."
+
+msgid "New profile"
+msgstr "Nuevo perfil"
+
+msgid "Create"
+msgstr "Crear"
+
+msgid "Name"
+msgstr "Nombre"
+
+msgid "A blocklist blocks what you list. An allowlist blocks the rest."
+msgstr "Una lista negra bloquea lo que enumeres. Una lista blanca bloquea todo lo demás."
+
+msgid "There is already a profile called {name}."
+msgstr "Ya hay un perfil llamado {name}."

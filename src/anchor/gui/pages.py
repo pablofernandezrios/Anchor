@@ -176,11 +176,29 @@ class HomePage(Page):
 class ProfilesPage(Page):
     """Mockup 4: what a profile blocks, and how its breaks behave."""
 
-    def __init__(self, on_change: Any, on_choose: Any) -> None:
+    def __init__(self, on_change: Any, on_choose: Any, on_create: Any = None) -> None:
         super().__init__()
         self._on_change = on_change
         self._on_choose = on_choose
+        self._on_create = on_create
         self._names: tuple[str, ...] = ()
+
+    def nothing(self, view: Outage) -> None:
+        """The empty state, with the way out it names.
+
+        The first version of this said "create one to begin" and gave no way
+        to do it, which is how the owner found that the interface could only
+        make a profile during the introduction.
+        """
+        super().nothing(view)
+        if self._on_create is not None:
+            self.content.append(self._make_one(halign=Gtk.Align.CENTER))
+
+    def _make_one(self, *, halign: Gtk.Align = Gtk.Align.END) -> Gtk.Widget:
+        button = Gtk.Button(label=_("New profile"), halign=halign)
+        button.add_css_class("suggested-action")
+        button.connect("clicked", lambda _b: self._on_create())
+        return button
 
     def show(
         self,
@@ -212,6 +230,8 @@ class ProfilesPage(Page):
             lambda widget, _p: self._on_choose(self._names[widget.get_selected()]),
         )
         group.add(row)
+        if self._on_create is not None:
+            group.set_header_suffix(self._make_one())
         return group
 
     def _web(self, screen: profiles_model.ProfileScreen) -> Gtk.Widget:

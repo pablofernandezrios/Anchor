@@ -104,7 +104,9 @@ terminal cannot, so the command simply reads what you type.
 
 ### `anchor profile list|show|create|edit|delete`
 
-The named sets of rules a session uses.
+The named sets of rules a session uses. The interface creates and edits
+them too (Profiles, New profile); these are the same actions from a
+terminal, as SPEC 15 asks.
 
 ```
 $ anchor profile list
