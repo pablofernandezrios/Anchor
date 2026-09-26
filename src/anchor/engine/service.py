@@ -9,6 +9,7 @@ sends one, which is why no password is involved in normal use.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import pwd
@@ -68,6 +69,13 @@ class _Handler(socketserver.StreamRequestHandler):
     server: EngineServer
 
     def handle(self) -> None:
+        self.server.remember(self.connection)
+        try:
+            self._handle()
+        finally:
+            self.server.forget(self.connection)
+
+    def _handle(self) -> None:
         peer = peer_identity(self.connection)
         if not self.server.is_authorised(peer.uid):
             log.warning("rejected a connection from %s", peer)
@@ -151,6 +159,8 @@ class EngineServer(socketserver.ThreadingUnixStreamServer):
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
         self._lock = threading.Lock()
+        # Every open client connection, so that server_close can hang up.
+        self._connections: set[socket.socket] = set()
 
         path = engine.paths.engine_socket
         encoded = str(path).encode("utf-8")
@@ -179,6 +189,33 @@ class EngineServer(socketserver.ThreadingUnixStreamServer):
             # Running unprivileged, in development or a test: the credential
             # check still applies, so fall back to a reachable socket.
             path.chmod(0o666)
+
+    def server_close(self) -> None:
+        """Close the listening socket, and hang up on the subscribers.
+
+        A subscriber sits on an open connection for as long as it lives, so
+        shutting the server down without closing them leaves every client
+        believing the engine is still there: no error, no end of stream, just
+        an engine that has stopped answering and a client that will never ask.
+        A dying process gets this for free from the kernel; an orderly
+        shutdown has to do it itself.
+        """
+        with self._lock:
+            open_now = list(self._connections)
+            self._connections.clear()
+        for connection in open_now:
+            # Already gone is the outcome this is asking for.
+            with contextlib.suppress(OSError):
+                connection.shutdown(socket.SHUT_RDWR)
+        super().server_close()
+
+    def remember(self, connection: socket.socket) -> None:
+        with self._lock:
+            self._connections.add(connection)
+
+    def forget(self, connection: socket.socket) -> None:
+        with self._lock:
+            self._connections.discard(connection)
 
     def is_authorised(self, uid: int) -> bool:
         """Accept root and the owner recorded at install time (SPEC 5.2)."""

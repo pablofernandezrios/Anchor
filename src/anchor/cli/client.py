@@ -119,9 +119,31 @@ class EngineClient:
             try:
                 line = self._reader.readline(MAX_LINE_BYTES + 1)
             except TimeoutError:
+                self._forget_the_timeout()
                 continue
             except OSError as error:
                 raise EngineUnreachableError(f"the event feed broke: {error}") from error
             if not line:
                 raise EngineUnreachableError("the engine closed the event feed")
             yield decode_event(line)
+
+    def _forget_the_timeout(self) -> None:
+        """Let the feed keep reading after a quiet moment.
+
+        Catching TimeoutError is not enough on its own. Python's socket file
+        object records that a read timed out and then refuses every later read
+        with "cannot read from timed out object" -- an OSError, which reads as
+        a broken connection. The agent therefore dropped its feed the first
+        time nothing happened for two seconds, reconnected, and did it again,
+        for as long as it ran: a reconnection every two seconds forever, on an
+        idle machine, which is exactly when nothing should be happening.
+
+        The flag is cleared rather than the connection rebuilt because the
+        buffer may already hold part of the next event, and reconnecting would
+        throw it away along with the subscription. It is a private attribute
+        of the standard library, so its absence is not an error: a Python that
+        does not have it is a Python that does not need this.
+        """
+        raw: Any = getattr(self._reader, "raw", None)
+        if raw is not None and getattr(raw, "_timeout_occurred", False):
+            raw._timeout_occurred = False

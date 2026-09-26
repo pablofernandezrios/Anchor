@@ -182,7 +182,12 @@ class TestFollowingTheEngine:
         link.start()
 
         assert wait_for(lambda: connections == [True], timeout=5)
+        # Closed, not merely stopped: shutdown() ends the accept loop and
+        # leaves open connections alone, so a subscriber would sit on a live
+        # socket and never learn anything. server_close hangs up on them, the
+        # way a dying anchord does.
         server.shutdown()
+        server.server_close()
 
         assert wait_for(lambda: connections[-1] is False, timeout=10)
         link.stop()

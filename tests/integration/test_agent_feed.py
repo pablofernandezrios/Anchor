@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from anchor.agent.feed import EngineFeed
+from anchor.agent.feed import READ_TIMEOUT_SECONDS, EngineFeed
 from anchor.blocker.watcher import wait_for
 from anchor.engine.core import Engine
 from anchor.engine.paths import Paths, Settings
@@ -185,6 +186,48 @@ class TestFollowingTheEngine:
         assert wait_for(lambda: bool(watcher.statuses), timeout=5)
         assert watcher.statuses[0]["active"] is True
         assert watcher.statuses[0]["profile"] == "Study"
+
+
+class TestAQuietEngine:
+    """Nothing happening is the normal case, and it used to end the feed.
+
+    Found by running the agent on a real desktop: it logged "connected to the
+    engine" and "the engine is not reachable" alternately, twice a second,
+    for as long as it ran. Anchor was idle, which is when it should be
+    silent.
+
+    Catching the read timeout was not enough. Python's socket file object
+    records that a read timed out and refuses every later read with
+    "cannot read from timed out object" -- an OSError, so the feed read it as
+    a broken connection and reconnected, over and over.
+    """
+
+    def test_the_feed_survives_far_longer_than_one_read_timeout(
+        self, server: Server, feed: EngineFeed, watcher: Watcher, engine: Engine
+    ) -> None:
+        feed.start()
+        assert wait_for(lambda: watcher.connections == [True], timeout=5)
+
+        # Long enough for several reads to time out on an idle feed.
+        time.sleep(READ_TIMEOUT_SECONDS * 2.5)
+
+        # Still one connection, never dropped: [True, False, True, ...] is the
+        # loop this test exists for.
+        assert watcher.connections == [True], "the feed reconnected while nothing happened"
+
+    def test_and_an_event_after_the_quiet_still_arrives(
+        self, server: Server, feed: EngineFeed, watcher: Watcher, engine: Engine
+    ) -> None:
+        """The feed must be reading, not merely unbroken."""
+        feed.start()
+        assert wait_for(lambda: watcher.connections == [True], timeout=5)
+
+        time.sleep(READ_TIMEOUT_SECONDS * 1.5)
+        start_session(engine)
+
+        assert wait_for(
+            lambda: len(watcher.events) > 0, timeout=5
+        ), "the feed stopped reading after a quiet moment"
 
 
 class TestWhenTheEngineGoesAway:
