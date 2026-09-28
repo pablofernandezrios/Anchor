@@ -467,19 +467,7 @@ class TrayMenu:
 
         match method:
             case "GetLayout":
-                root, properties, children = menu.layout_for(self._items)
-                layout = glib.Variant(
-                    "(ia{sv}av)",
-                    (
-                        root,
-                        _variants(glib, properties),
-                        [
-                            glib.Variant("(ia{sv}av)", (index, _variants(glib, props), []))
-                            for index, props, _ in children
-                        ],
-                    ),
-                )
-                invocation.return_value(glib.Variant("(u(ia{sv}av))", (self._revision, layout)))
+                invocation.return_value(layout_reply(glib, self._revision, self._items))
                 return
 
             case "GetGroupProperties":
@@ -528,6 +516,38 @@ class TrayMenu:
             self._on_action(action)
         except Exception:
             log.exception("the menu handler raised for %r", action)
+
+
+def layout_reply(glib: Any, revision: int, items: Any) -> Any:
+    """The answer to ``GetLayout``: a revision and the tree (ADR 3).
+
+    Its own function because it is the one piece of the D-Bus layer that can
+    be checked without a bus, and it needed checking. It crashed the agent on
+    the owner's desktop about once a second -- which is how often the panel
+    asks -- while the indicator and everything else went on working, so
+    Ubuntu reported a crashed application for a menu that was never drawn.
+
+    The last line is the whole point. ``new_tuple`` rather than
+    ``Variant("(u(ia{sv}av))", (revision, layout))``: a GLib.Variant is
+    indexable in PyGObject, so a format string expecting to build
+    ``(ia{sv}av)`` walks into the one already built and unpacks it back to
+    plain Python. The values inside ``a{sv}`` lose their variant-ness on the
+    way, and the leaf constructor for ``v`` is handed a str.
+    """
+    root, properties, children = menu.layout_for(items)
+    layout = glib.Variant(
+        "(ia{sv}av)",
+        (
+            root,
+            _variants(glib, properties),
+            # An "av" holds variants, so these are built rather than nested.
+            [
+                glib.Variant("(ia{sv}av)", (index, _variants(glib, props), []))
+                for index, props, _ in children
+            ],
+        ),
+    )
+    return glib.Variant.new_tuple(glib.Variant("u", revision), layout)
 
 
 def _variants(glib: Any, properties: dict[str, Any]) -> dict[str, Any]:
