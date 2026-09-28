@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 
 from anchor.blocker.attempts import AttemptTracker
@@ -131,3 +133,72 @@ class TestHousekeeping:
 
         assert tracker.total == 0
         assert tracker.record("youtube.com").notify
+
+
+class TestTheSessionWideLimit:
+    """The per-domain rule is necessary and, alone, badly insufficient.
+
+    An allowlist session blocks every name the machine reaches for, which on
+    an idle desktop is telemetry, update checks and a browser's own services:
+    hundreds of distinct names nobody typed. The first allowlist session on a
+    real desktop produced roughly four hundred notifications in five minutes,
+    each one obeying the per-domain rule perfectly, and left the machine
+    crawling.
+    """
+
+    def tracker(self, clock: Callable[[], float]) -> AttemptTracker:
+        return AttemptTracker(budget=3, budget_window=60.0, clock=clock)
+
+    def test_a_flood_of_new_domains_is_capped(self) -> None:
+        now = [0.0]
+        tracker = self.tracker(lambda: now[0])
+
+        told = 0
+        for i in range(400):
+            now[0] += 0.01
+            if tracker.record(f"host{i}.example.com").notify:
+                told += 1
+
+        assert told == 3, "every new domain was announced"
+
+    def test_and_the_ones_held_back_are_counted(self) -> None:
+        now = [0.0]
+        tracker = self.tracker(lambda: now[0])
+        for i in range(50):
+            now[0] += 0.01
+            tracker.record(f"host{i}.example.com")
+
+        now[0] += 61.0
+        outcome = tracker.record("late.example.com")
+
+        assert outcome.notify
+        assert outcome.withheld == 47, "the flood was silent and left no trace"
+
+    def test_the_budget_returns_with_the_next_window(self) -> None:
+        now = [0.0]
+        tracker = self.tracker(lambda: now[0])
+        for i in range(10):
+            now[0] += 0.01
+            tracker.record(f"host{i}.example.com")
+
+        now[0] += 61.0
+        assert tracker.record("a.example.com").notify
+
+    def test_a_quiet_session_still_says_everything(self) -> None:
+        """One block every few minutes is not a flood, and is named."""
+        now = [0.0]
+        tracker = self.tracker(lambda: now[0])
+
+        for i in range(10):
+            now[0] += 120.0
+            assert tracker.record(f"host{i}.example.com").notify
+
+    def test_nothing_is_lost_from_the_count(self) -> None:
+        """Held back from the notifications, never from the statistics."""
+        now = [0.0]
+        tracker = self.tracker(lambda: now[0])
+        for i in range(400):
+            now[0] += 0.01
+            tracker.record(f"host{i}.example.com")
+
+        assert tracker.total == 400

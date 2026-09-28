@@ -7,9 +7,11 @@ from typing import Any
 
 import pytest
 
+from anchor.gui import start
 from anchor.gui.start import (
     DURATION_STEP,
     MAX_MANUAL,
+    MIN_DURATION,
     StartForm,
     confirmation,
     request_for,
@@ -92,7 +94,8 @@ class TestTheDuration:
         [
             (9000, +1, 9000 + DURATION_STEP),
             (9000, -1, 9000 - DURATION_STEP),
-            (DURATION_STEP, -1, DURATION_STEP),
+            # The floor is a minute now, not a quarter of an hour.
+            (MIN_DURATION, -1, MIN_DURATION),
             (MAX_MANUAL, +1, MAX_MANUAL),
         ],
     )
@@ -222,3 +225,29 @@ class TestTheConfirmation:
         """SPEC 8.1 asks for a clear warning; the moment for it is here."""
         said = confirmation(form(profile=profile(web_mode="allowlist"))).web_line
         assert "everything except" in said
+
+
+class TestExactMinutes:
+    """The duration moved in quarter-hours and could not say fifty.
+
+    Which is the length of the break cycle Anchor itself suggests, and the
+    owner asked for the exact number rather than the nearest fifteen.
+    """
+
+    def test_any_minute_is_allowed(self) -> None:
+        assert start.from_minutes(50) == 50 * 60
+
+    def test_a_minute_is_the_floor(self) -> None:
+        assert start.from_minutes(0) == 60
+        assert start.from_minutes(-5) == 60
+
+    def test_the_eight_hour_cap_still_holds(self) -> None:
+        """SPEC 7.1, whatever is typed."""
+        assert start.from_minutes(10_000) == start.MAX_MANUAL
+
+    def test_reading_it_back_gives_whole_minutes(self) -> None:
+        assert start.minutes_of(50 * 60) == 50
+
+    def test_and_survives_the_round_trip(self) -> None:
+        for minutes in (1, 7, 50, 137, 480):
+            assert start.minutes_of(start.from_minutes(minutes)) == minutes

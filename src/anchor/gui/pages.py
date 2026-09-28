@@ -19,7 +19,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gtk  # noqa: E402
+from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from anchor.gui import home as home_model
 from anchor.gui import lists as lists_model
@@ -60,6 +60,32 @@ class Page(Gtk.ScrolledWindow):
         clamp.set_margin_end(18)
         self.set_child(clamp)
 
+    def rebuilding(self) -> None:
+        """Empty the page, remembering where the user was looking.
+
+        Every screen redraws itself whole after any change, because a view
+        model returning finished text is what keeps the GTK layer thin. The
+        cost is that the scroll position goes with it: ticking one box in a
+        list of forty applications threw the page back to the top, every
+        time, which makes a long list unusable well before it makes it
+        annoying.
+
+        The position is put back once GTK has laid the new page out. Until it
+        has, the scrollbar has no range to be restored into.
+        """
+        adjustment = self.get_vadjustment()
+        was = adjustment.get_value() if adjustment is not None else 0.0
+        clear(self.content)
+        if adjustment is None or not was:
+            return
+
+        def put_it_back() -> bool:
+            room = adjustment.get_upper() - adjustment.get_page_size()
+            adjustment.set_value(min(was, max(0.0, room)))
+            return False
+
+        GLib.idle_add(put_it_back)
+
     def nothing(self, view: Outage) -> None:
         """Draw why there is nothing here, instead of nothing.
 
@@ -68,7 +94,7 @@ class Page(Gtk.ScrolledWindow):
         that used to be the whole of it is gone in six seconds and takes the
         explanation with it.
         """
-        clear(self.content)
+        self.rebuilding()
         status = Adw.StatusPage(title=view.title, description=view.detail)
         status.set_icon_name(first_icon("network-offline-symbolic", "dialog-warning-symbolic"))
         self.content.append(status)
@@ -84,7 +110,7 @@ class HomePage(Page):
         self._act = act
 
     def show(self, view: home_model.HomeView) -> None:
-        clear(self.content)
+        self.rebuilding()
 
         if view.banner:
             warning = Adw.Banner(title=view.banner, revealed=True)
@@ -206,7 +232,7 @@ class ProfilesPage(Page):
         *,
         names: tuple[str, ...] = (),
     ) -> None:
-        clear(self.content)
+        self.rebuilding()
         self._names = names
 
         if screen.notice:
@@ -362,7 +388,7 @@ class SchedulesPage(Page):
         self.grid = WeekGrid(on_activate=on_block)
 
     def show(self, grid: schedules_model.ScheduleGrid) -> None:
-        clear(self.content)
+        self.rebuilding()
 
         heading = box(Gtk.Orientation.HORIZONTAL, spacing=12)
         heading.append(label(_("Schedules"), css=("title-2",)))
@@ -399,7 +425,7 @@ class ListsPage(Page):
         self._on_change = on_change
 
     def show(self, view: lists_model.ListsView) -> None:
-        clear(self.content)
+        self.rebuilding()
 
         if not view.categories:
             self.content.append(Adw.StatusPage(title=view.empty))
@@ -441,7 +467,7 @@ class StatsPage(Page):
         self.chart = BarChart()
 
     def show(self, view: stats_model.StatsView) -> None:
-        clear(self.content)
+        self.rebuilding()
 
         heading = box(Gtk.Orientation.HORIZONTAL, spacing=12)
         heading.append(label(view.period, css=("title-2",)))
@@ -521,7 +547,7 @@ class SettingsPage(Page):
         self._on_onboarding = on_onboarding
 
     def show(self, view: settings_model.SettingsView) -> None:
-        clear(self.content)
+        self.rebuilding()
 
         if view.notice:
             self.content.append(Adw.Banner(title=view.notice, revealed=True))

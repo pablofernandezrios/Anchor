@@ -29,12 +29,13 @@ from anchor.gui.i18n import _
 from anchor.protocol.messages import MAX_MANUAL_DURATION_SECONDS
 from anchor.protocol.types import BreakHardness, BreakType, Level, Valve, WebMode
 
-#: What one press of + or - is worth. Fifteen minutes is the smallest change
-#: anybody makes to a focus session on purpose.
+#: What one press of + or - is worth.
 DURATION_STEP: Final = 15 * 60
 
-#: The shortest session the form will offer.
-MIN_DURATION: Final = DURATION_STEP
+#: The shortest session the form will offer. A minute, not a quarter of one:
+#: the duration used to move in fifteen-minute jumps and could not express
+#: "fifty", which is the length of the break cycle Anchor itself suggests.
+MIN_DURATION: Final = 60
 
 #: SPEC 7.1: eight hours at start, for manual sessions. Schedules are exempt.
 MAX_MANUAL: Final = MAX_MANUAL_DURATION_SECONDS
@@ -102,6 +103,16 @@ def stepped(seconds: int, direction: int) -> int:
     """One press of + or -, held inside what a session may be."""
     moved = seconds + direction * DURATION_STEP
     return max(MIN_DURATION, min(MAX_MANUAL, moved))
+
+
+def minutes_of(seconds: int) -> int:
+    """The duration as whole minutes, for a control that counts in them."""
+    return max(MIN_DURATION, min(MAX_MANUAL, seconds)) // 60
+
+
+def from_minutes(minutes: int) -> int:
+    """Any number of minutes a person types, held inside what SPEC 7.1 allows."""
+    return max(MIN_DURATION, min(MAX_MANUAL, int(minutes) * 60))
 
 
 def start_form(

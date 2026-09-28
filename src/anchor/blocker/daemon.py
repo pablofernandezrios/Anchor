@@ -142,7 +142,21 @@ class BlockerDaemon:
             return
         try:
             with EngineClient(self.paths.engine_socket, timeout=2.0) as client:
-                client.call("blocked.report", {"domain": domain, "rule": rule})
+                # The verdict travels with the report. It was computed here
+                # and then thrown away: every counted attempt was reported,
+                # every report became an event, and every event became a
+                # notification, so SPEC 8.3's limit was calculated and never
+                # applied. An allowlist session on a real desktop sent about
+                # four hundred notifications in five minutes.
+                client.call(
+                    "blocked.report",
+                    {
+                        "domain": domain,
+                        "rule": rule,
+                        "notify": outcome.notify,
+                        "withheld": outcome.withheld,
+                    },
+                )
         except (EngineUnreachableError, OSError):
             # The engine is restarting. The block already happened; losing one
             # statistic is not worth failing a lookup over.

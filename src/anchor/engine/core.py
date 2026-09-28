@@ -945,7 +945,17 @@ class Engine:
         # This event carries a domain, and goes only to subscribers in the
         # user's own session so the agent can show a notification. It is never
         # written to the log (SPEC 13).
-        self.emit("blocked.attempt", {"domain": domain, "rule": rule})
+        self.emit(
+            "blocked.attempt",
+            {
+                "domain": domain,
+                "rule": rule,
+                # Counted always, announced sometimes. The statistics want
+                # every attempt; the user does not.
+                "notify": bool(request.payload.get("notify", True)),
+                "withheld": int(request.payload.get("withheld", 0)),
+            },
+        )
         return request.ok({"recorded": True, "total": self.state.session.blocked_attempts})
 
     def _grace_remaining(self, session: Session) -> float:

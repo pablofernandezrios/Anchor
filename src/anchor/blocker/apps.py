@@ -223,6 +223,10 @@ def parse_desktop_entry(path: Path) -> InstalledApp | None:
     )
 
 
+#: Anchor's own desktop entry, which is not something a profile may block.
+ANCHOR_APP_ID: Final = "org.anchor.Anchor"
+
+
 def discover(*, roots: list[Path] | None = None, home: Path | None = None) -> list[InstalledApp]:
     """List every application installed on this machine (SPEC 9).
 
@@ -238,12 +242,19 @@ def discover(*, roots: list[Path] | None = None, home: Path | None = None) -> li
 
     # Later directories win, which is why the user's own come last.
     found: dict[str, InstalledApp] = {}
+    ours = f"{ANCHOR_APP_ID}.desktop"
     for directory in search:
         try:
             entries = sorted(directory.glob("*.desktop"))
         except OSError:
             continue
         for entry in entries:
+            if entry.name == ours:
+                # Anchor is never on the list. A profile that closed Anchor
+                # would take away the interface, the indicator and the way
+                # out, and leave the blocking running -- offered as an
+                # ordinary checkbox, next to Calculator.
+                continue
             app = parse_desktop_entry(entry)
             if app is not None:
                 found[app.id] = app

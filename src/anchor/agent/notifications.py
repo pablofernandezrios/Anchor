@@ -79,9 +79,30 @@ def plan(event: str, payload: dict[str, Any]) -> Notification | None:
 
 def _blocked(payload: dict[str, Any]) -> Notification | None:
     """SPEC 8.3: the browser shows its own error; this says who did it."""
+    if not payload.get("notify", True):
+        # Counted, recorded, and deliberately not said out loud.
+        return None
+
     domain = str(payload.get("domain", "")).strip()
     if not domain:
         return None
+
+    withheld = int(payload.get("withheld", 0) or 0)
+    if withheld:
+        # One line for a flood. An allowlist session blocks every name the
+        # machine reaches for -- telemetry, update checks, a browser's own
+        # services -- and naming each one tells the user nothing they can
+        # act on. The names are in the statistics, where SPEC 13 puts them.
+        return Notification(
+            summary="Sites blocked",
+            body=(
+                f"{domain} and {withheld} "
+                f"other {'site' if withheld == 1 else 'sites'} "
+                "were blocked during this session."
+            ),
+            icon="dialog-information-symbolic",
+            channel=BLOCKED_CHANNEL,
+        )
 
     rule = str(payload.get("rule", "")).strip()
     body = f"{domain} is blocked during this session."

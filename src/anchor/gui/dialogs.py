@@ -25,7 +25,7 @@ from anchor.gui import onboarding as onboarding_model
 from anchor.gui import profiles as profiles_model
 from anchor.gui import start as start_model
 from anchor.gui.i18n import _
-from anchor.gui.widgets import box, describe, label
+from anchor.gui.widgets import box, label
 
 
 class StartSessionDialog(Adw.Dialog):
@@ -86,30 +86,34 @@ class StartSessionDialog(Adw.Dialog):
 
     def _duration(self, form: start_model.StartForm) -> Adw.PreferencesGroup:
         group = Adw.PreferencesGroup(title=_("Duration"), description=form.cap)
-        row = Adw.ActionRow(title=form.duration, subtitle=form.ends)
-
-        for name, step in ((_("Shorter"), -1), (_("Longer"), +1)):
-            button = Gtk.Button(
-                icon_name="list-remove-symbolic" if step < 0 else "list-add-symbolic",
-                valign=Gtk.Align.CENTER,
-            )
-            button.add_css_class("flat")
-            describe(button, name)
-            button.connect(
-                "clicked",
-                lambda _b, step=step: self._changed(
-                    "duration",
-                    start_model.stepped(self._form.duration_seconds if self._form else 0, step),
-                ),
-            )
-            row.add_suffix(button)
-
+        # Minutes, typed or stepped. Two buttons moving in quarter-hours could
+        # not say "fifty", which is the length of the break cycle Anchor
+        # itself suggests, and the owner asked for the exact number.
+        row = Adw.SpinRow(
+            title=_("Minutes"),
+            subtitle=form.ends,
+            adjustment=Gtk.Adjustment(
+                lower=start_model.MIN_DURATION // 60,
+                upper=start_model.MAX_MANUAL // 60,
+                step_increment=5,
+                page_increment=30,
+                value=start_model.minutes_of(form.duration_seconds),
+            ),
+        )
+        row.connect("notify::value", self._duration_typed)
         group.add(row)
         if form.problem:
             problem = Adw.ActionRow(title=form.problem)
             problem.add_css_class("error")
             group.add(problem)
         return group
+
+    def _duration_typed(self, row: Any, _param: Any) -> None:
+        """Only when it really changed: setting the value redraws the form."""
+        seconds = start_model.from_minutes(int(row.get_value()))
+        if self._form is not None and seconds == self._form.duration_seconds:
+            return
+        self._changed("duration", seconds)
 
     def _levels(self, form: start_model.StartForm) -> Adw.PreferencesGroup:
         group = Adw.PreferencesGroup(title=_("Blocking level"))

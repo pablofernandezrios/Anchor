@@ -180,3 +180,27 @@ class TestResolvingTheCommand:
 
         assert app is not None
         assert app.exec_path == "definitely-not-installed"
+
+
+class TestAnchorIsNotOnTheList:
+    """A profile that closed Anchor would take away its own way out.
+
+    The owner found it offered as an ordinary checkbox, next to Calculator.
+    """
+
+    def test_it_is_left_out(self, tmp_path: Path) -> None:
+        share = tmp_path / "usr" / "share" / "applications"
+        share.mkdir(parents=True)
+        for name, title in (
+            ("org.anchor.Anchor.desktop", "Anchor"),
+            ("org.gnome.Calculator.desktop", "Calculator"),
+        ):
+            (share / name).write_text(
+                f"[Desktop Entry]\nType=Application\nName={title}\nExec=/usr/bin/{title.lower()}\n",
+                encoding="utf-8",
+            )
+
+        found = {app.name for app in discover(roots=[tmp_path], home=tmp_path / "home")}
+
+        assert "Calculator" in found
+        assert "Anchor" not in found

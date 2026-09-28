@@ -110,14 +110,6 @@ msgstr "Perfil"
 msgid "Duration"
 msgstr "Duración"
 
-#: src/anchor/gui/dialogs.py:90
-msgid "Shorter"
-msgstr "Más corta"
-
-#: src/anchor/gui/dialogs.py:90
-msgid "Longer"
-msgstr "Más larga"
-
 #: src/anchor/gui/dialogs.py:114
 msgid "Blocking level"
 msgstr "Nivel de bloqueo"
@@ -1134,3 +1126,6 @@ msgstr "Una lista negra bloquea lo que enumeres. Una lista blanca bloquea todo l
 
 msgid "There is already a profile called {name}."
 msgstr "Ya hay un perfil llamado {name}."
+
+msgid "Minutes"
+msgstr "Minutos"

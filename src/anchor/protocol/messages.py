@@ -155,7 +155,14 @@ REQUEST_SCHEMAS: Final[dict[str, Schema]] = {
         add_apps=Field(list, required=False, default=None, item_kind=str),
         remove_apps=Field(list, required=False, default=None, item_kind=str),
     ),
-    "blocked.report": Schema(domain=Field(str), rule=Field(str)),
+    "blocked.report": Schema(
+        domain=Field(str),
+        rule=Field(str),
+        # The blocker decides whether this one is worth a notification;
+        # the engine records it either way (SPEC 8.3, 13).
+        notify=Field(bool, required=False, default=True),
+        withheld=Field(int, required=False, default=0, minimum=0),
+    ),
     "apps.report": Schema(
         kind=Field(str, choices=("grace", "closed", "launch")),
         apps=Field(list, item_kind=str),
