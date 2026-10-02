@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import pwd
+import queue
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -61,6 +62,11 @@ DATA_DIR = Path("/usr/share/anchor")
 
 #: How often to ask the engine what is in force.
 POLL_SECONDS = 1.0
+
+#: How many blocked names may wait to be reported. A page in an allowlist
+#: session blocks a few hundred; this is several pages of slack, and small
+#: enough that a daemon nobody is talking to cannot grow without bound.
+REPORT_BACKLOG = 4096
 
 #: How often to check whether the network moved. Less often than the policy
 #: poll, because it shells out to resolvectl.
@@ -121,6 +127,12 @@ class BlockerDaemon:
         self._lock = threading.Lock()
         self._stopping = threading.Event()
         self._resolver: Resolver | None = None
+        # Blocked names waiting to be reported. Bounded: a flood of blocks
+        # must cost memory that stops growing, not memory that does not.
+        # Dropping the oldest is right -- the statistics lose a row, the user
+        # keeps a responsive machine, and the block itself already happened.
+        self._reports: queue.Queue[tuple[str, str, bool, int]] = queue.Queue(maxsize=REPORT_BACKLOG)
+        self._reporter: threading.Thread | None = None
 
         self.enforcer = AppEnforcer(
             catalogue=self.installed_apps,
@@ -136,10 +148,40 @@ class BlockerDaemon:
             return self._policy
 
     def on_blocked(self, domain: str, rule: str) -> None:
-        """Report a refused name, at most as often as SPEC 8.3 allows."""
+        """Report a refused name, at most as often as SPEC 8.3 allows.
+
+        Queued, never sent from here. This runs inside the resolver's request
+        path, before the NXDOMAIN is written back, and reporting took a fresh
+        socket to the engine, a round trip, a state file rewritten with its
+        HMAC and a row in the statistics database -- all before the browser
+        heard anything. One blocked name is imperceptible. An allowlist
+        session blocks every name a page reaches for, which is hundreds, and
+        doing that work in series made the whole desktop crawl.
+        """
         outcome = self.attempts.record(domain)
         if not outcome.counted:
             return
+        try:
+            self._reports.put_nowait((domain, rule, outcome.notify, outcome.withheld))
+        except queue.Full:
+            # Never wait here: this is the resolver's thread, and a full
+            # queue means the engine is slow or gone. The block stands
+            # either way; it is the record of it that is dropped.
+            log.debug("the report queue is full; dropping one blocked attempt")
+
+    def _send_reports(self) -> None:
+        """Drain the queue, off the path that answers queries."""
+        while not self._stopping.is_set():
+            try:
+                report = self._reports.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            try:
+                self._report_one(*report)
+            except Exception:
+                log.exception("reporting a blocked attempt failed")
+
+    def _report_one(self, domain: str, rule: str, notify: bool, withheld: int) -> None:
         try:
             with EngineClient(self.paths.engine_socket, timeout=2.0) as client:
                 # The verdict travels with the report. It was computed here
@@ -153,8 +195,8 @@ class BlockerDaemon:
                     {
                         "domain": domain,
                         "rule": rule,
-                        "notify": outcome.notify,
-                        "withheld": outcome.withheld,
+                        "notify": notify,
+                        "withheld": withheld,
                     },
                 )
         except (EngineUnreachableError, OSError):
@@ -229,6 +271,9 @@ class BlockerDaemon:
 
     def stop(self) -> None:
         self._stopping.set()
+        if self._reporter is not None:
+            self._reporter.join(timeout=2)
+            self._reporter = None
         if self._resolver is not None:
             self._resolver.stop()
             self._resolver = None
@@ -237,6 +282,10 @@ class BlockerDaemon:
     def run(self) -> None:
         """Poll the engine until stopped, applying and undoing as it says."""
         self.start_resolver()
+        self._reporter = threading.Thread(
+            target=self._send_reports, name="anchor-reports", daemon=True
+        )
+        self._reporter.start()
         since_network = 0.0
 
         while not self._stopping.wait(POLL_SECONDS):

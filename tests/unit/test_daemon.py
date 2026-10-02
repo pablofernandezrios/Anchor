@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import os
 import pwd
+import time
 from pathlib import Path
 
 import pytest
 
 import anchor.blocker.resolved as resolved_module
 from anchor.blocker.apps import AppKind, InstalledApp
-from anchor.blocker.daemon import BlockerDaemon, Lists
+from anchor.blocker.daemon import REPORT_BACKLOG, BlockerDaemon, Lists
 from anchor.blocker.enforcement import Closure
 from anchor.engine.paths import Paths, Settings
 from anchor.protocol.types import WebMode
@@ -513,3 +514,42 @@ def _discord() -> InstalledApp:
 
 def _closure() -> Closure:
     return Closure(app_id="discord.desktop", name="Discord", pids=(100,), killed=False)
+
+
+class TestReportingDoesNotHoldUpTheAnswer:
+    """The resolver's thread must never wait on the engine.
+
+    on_blocked runs inside the request path, before the NXDOMAIN is written
+    back. It used to open a socket to the engine, wait for a reply, and have
+    the engine rewrite its state file and insert a statistics row -- all
+    before the browser heard anything. One name is imperceptible; an
+    allowlist session blocks hundreds per page, in series, and the owner's
+    whole desktop crawled.
+    """
+
+    def test_it_returns_without_talking_to_the_engine(self, daemon: BlockerDaemon) -> None:
+        # There is no engine here: a synchronous report would spend its whole
+        # two-second timeout failing to reach one.
+        started = time.monotonic()
+        daemon.on_blocked("ads.example.com", "example.com")
+
+        assert time.monotonic() - started < 0.5
+
+    def test_the_report_is_kept_for_later(self, daemon: BlockerDaemon) -> None:
+        daemon.on_blocked("ads.example.com", "example.com")
+
+        assert daemon._reports.qsize() == 1
+
+    def test_a_flood_costs_bounded_memory(self, daemon: BlockerDaemon) -> None:
+        """Dropping the newest beats growing without end, and the block stands."""
+        for index in range(REPORT_BACKLOG + 500):
+            daemon.on_blocked(f"host{index}.example.com", "example.com")
+
+        assert daemon._reports.qsize() == REPORT_BACKLOG
+
+    def test_the_same_name_twice_in_a_moment_is_one_report(self, daemon: BlockerDaemon) -> None:
+        """A visit asks for A and AAAA; the queue should not see both."""
+        daemon.on_blocked("ads.example.com", "example.com")
+        daemon.on_blocked("ads.example.com", "example.com")
+
+        assert daemon._reports.qsize() == 1

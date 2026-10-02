@@ -114,10 +114,14 @@ class EngineFeed:
                     return False
 
                 reached = True
+                # Subscribed first, then announced. Saying "connected" before
+                # the engine knows it has a subscriber leaves a window where
+                # an event is emitted and nobody is listening for it.
+                events = client.subscribe(should_stop=self._stopping.is_set)
                 self._became(connected=True)
                 self._deliver_status(status.result)
 
-                for event in client.subscribe(should_stop=self._stopping.is_set):
+                for event in events:
                     self._deliver_event(event)
         except EngineUnreachableError as error:
             self._became(connected=False, why=str(error))

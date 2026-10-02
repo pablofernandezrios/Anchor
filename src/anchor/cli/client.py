@@ -105,6 +105,12 @@ class EngineClient:
         events, so this connection cannot be used for requests again. A quiet
         feed is normal — no session means no events — so a read timing out is
         not an error, only an opportunity to notice that we were asked to stop.
+
+        The subscription is sent before this returns, rather than on the first
+        turn of the loop. A generator does nothing until it is read from, so a
+        caller that announced itself connected and then started reading had a
+        window — short, and wide enough — in which the engine did not know it
+        had a subscriber. Every event emitted in it was lost.
         """
         response = self.call("events.subscribe", {"events": events} if events else {})
         if not response.ok:
@@ -115,6 +121,11 @@ class EngineClient:
         if self._reader is None:  # pragma: no cover - call() would have raised
             raise EngineUnreachableError("not connected to the engine")
 
+        return self._events(should_stop)
+
+    def _events(self, should_stop: Callable[[], bool]) -> Iterator[Event]:
+        """The feed itself, once the engine knows we are listening."""
+        assert self._reader is not None
         while not should_stop():
             try:
                 line = self._reader.readline(MAX_LINE_BYTES + 1)

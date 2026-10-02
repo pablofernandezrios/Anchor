@@ -105,6 +105,9 @@ class Engine:
         # the engine hears from it at all, which makes it the only liveness
         # signal there is without asking systemd (SPEC 15).
         self._blocker_seen: float | None = None
+        # Whether the blocked-attempt counter has moved since the last
+        # save. Settled on the next tick; see _on_blocked_report.
+        self._unsaved_attempts = False
 
         self.stats = Statistics(paths.stats_db, retention_days=settings.retention_days)
 
@@ -220,6 +223,13 @@ class Engine:
         Called on a timer, and on boot and resume, where SPEC 6.2 requires
         expired sessions to end and active ones to resume with the time left.
         """
+        if self._unsaved_attempts:
+            # Blocked attempts change the session's count without writing it,
+            # so that no DNS answer waits for a disk write. This is where the
+            # debt is settled.
+            self._unsaved_attempts = False
+            self.save()
+
         session = self.state.session
         if session is None:
             self._start_scheduled_session()
@@ -935,7 +945,13 @@ class Engine:
             return request.ok({"recorded": False})
 
         self.state.session = session.with_blocked_attempt()
-        self.save()
+        # Not saved here. The counter changes on every blocked name, and an
+        # allowlist session blocks hundreds per page; rewriting the state file
+        # and its HMAC each time put a disk write in front of every DNS
+        # answer. The tick saves it, and the statistics database has every
+        # attempt anyway, so the worst a crash costs is a count that is a few
+        # seconds stale (SPEC 6.1, 13).
+        self._unsaved_attempts = True
 
         domain = str(request.payload["domain"])
         rule = str(request.payload["rule"])
