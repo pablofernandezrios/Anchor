@@ -44,6 +44,8 @@ install -Dpm 0644 packaging/systemd/anchor-blockerd.service %{buildroot}%{_unitd
 install -Dpm 0644 packaging/systemd/anchor-agent.service %{buildroot}%{_userunitdir}/anchor-agent.service
 
 install -Dpm 0644 data/essentials.txt %{buildroot}%{_datadir}/anchor/essentials.txt
+install -Dpm 0644 data/web-assets.txt %{buildroot}%{_datadir}/anchor/web-assets.txt
+install -Dpm 0644 data/companions.txt %{buildroot}%{_datadir}/anchor/companions.txt
 install -Dpm 0644 data/doh-endpoints.txt %{buildroot}%{_datadir}/anchor/doh-endpoints.txt
 install -Dpm 0644 data/doh-domains.txt %{buildroot}%{_datadir}/anchor/doh-domains.txt
 install -Dpm 0644 data/tunnels.txt %{buildroot}%{_datadir}/anchor/tunnels.txt
@@ -102,6 +104,8 @@ fi
 %{_unitdir}/anchor-blockerd.service
 %{_userunitdir}/anchor-agent.service
 %{_datadir}/anchor/essentials.txt
+%{_datadir}/anchor/web-assets.txt
+%{_datadir}/anchor/companions.txt
 %{_datadir}/anchor/doh-endpoints.txt
 %{_datadir}/anchor/doh-domains.txt
 %{_datadir}/anchor/tunnels.txt

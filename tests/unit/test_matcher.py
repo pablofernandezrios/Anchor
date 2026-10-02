@@ -6,8 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from anchor.blocker.matcher import Policy, normalise_domain
+from anchor.blocker.matcher import (
+    Policy,
+    load_companions,
+    load_domain_file,
+    normalise_domain,
+    with_companions,
+)
 from anchor.protocol.types import WebMode
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def blocklist(*domains: str, essentials: frozenset[str] | None = None) -> Policy:
@@ -184,3 +192,117 @@ class TestLoadingDomainFiles:
         assert "connectivity-check.ubuntu.com" in essentials
         assert "pool.ntp.org" in essentials
         assert len(essentials) >= 8
+
+
+class TestAnAllowedSiteArrivesWhole:
+    """SPEC 8.1: a permitted site must load what it is made of.
+
+    The owner put github.com on an allowlist and got a column of unstyled
+    links, because GitHub keeps its stylesheets on githubassets.com and that
+    is a different domain. Anchor sees DNS names and nothing else, so it
+    cannot infer that one query was made on behalf of another -- it can only
+    be told in advance, which is what these two lists are.
+    """
+
+    def policy(self, *domains: str) -> Policy:
+        return Policy(
+            mode=WebMode.ALLOWLIST,
+            domains=with_companions(
+                frozenset(domains), {"github.com": frozenset({"githubassets.com"})}
+            ),
+            assets=frozenset({"fonts.googleapis.com", "cdnjs.cloudflare.com"}),
+        )
+
+    def test_the_site_itself_resolves(self) -> None:
+        assert not self.policy("github.com").is_blocked("github.com")
+
+    def test_and_so_does_what_it_keeps_its_stylesheets_on(self) -> None:
+        assert not self.policy("github.com").is_blocked("github.githubassets.com")
+
+    def test_a_companion_of_a_site_you_did_not_allow_stays_blocked(self) -> None:
+        """The conditionality is the point: this is not a second allowlist."""
+        assert self.policy("wikipedia.org").is_blocked("github.githubassets.com")
+
+    def test_shared_infrastructure_resolves(self) -> None:
+        assert not self.policy("github.com").is_blocked("fonts.googleapis.com")
+
+    def test_but_it_does_not_open_the_web(self) -> None:
+        """You reach a distraction by its name, and its name still fails."""
+        policy = self.policy("github.com")
+
+        assert policy.is_blocked("reddit.com")
+        assert policy.is_blocked("youtube.com")
+
+
+class TestTheAssetListIsNotALoophole:
+    """In blocklist mode the user named what to block, and that stands."""
+
+    def test_a_blocked_site_stays_blocked_though_assets_are_known(self) -> None:
+        policy = Policy(
+            mode=WebMode.BLOCKLIST,
+            domains=frozenset({"fonts.googleapis.com"}),
+            assets=frozenset({"fonts.googleapis.com"}),
+        )
+
+        assert policy.is_blocked("fonts.googleapis.com")
+
+
+class TestReadingTheCompanionList:
+    def test_a_site_and_its_companions(self, tmp_path: Path) -> None:
+        path = tmp_path / "companions.txt"
+        path.write_text(
+            "# a comment\ngithub.com: githubassets.com githubusercontent.com\n",
+            encoding="utf-8",
+        )
+
+        assert load_companions(path) == {
+            "github.com": frozenset({"githubassets.com", "githubusercontent.com"})
+        }
+
+    def test_a_line_with_no_companions_is_skipped(self, tmp_path: Path) -> None:
+        path = tmp_path / "companions.txt"
+        path.write_text("github.com:\ngitlab.com: gitlab-static.net\n", encoding="utf-8")
+
+        assert load_companions(path) == {"gitlab.com": frozenset({"gitlab-static.net"})}
+
+    def test_a_bad_entry_costs_itself_and_not_the_file(self, tmp_path: Path) -> None:
+        """A typo in shipped data must not take the whole list down."""
+        path = tmp_path / "companions.txt"
+        path.write_text("///: nonsense\ngitlab.com: gitlab-static.net\n", encoding="utf-8")
+
+        assert load_companions(path) == {"gitlab.com": frozenset({"gitlab-static.net"})}
+
+    def test_a_missing_file_is_empty_rather_than_fatal(self, tmp_path: Path) -> None:
+        assert load_companions(tmp_path / "nothing.txt") == {}
+
+    def test_companions_do_not_have_companions(self) -> None:
+        """One hop. A chain would allow a great deal by naming one thing."""
+        chained = {
+            "a.example": frozenset({"b.example"}),
+            "b.example": frozenset({"c.example"}),
+        }
+        expanded = with_companions(frozenset({"a.example"}), chained)
+
+        assert "b.example" in expanded
+        assert "c.example" not in expanded
+
+
+class TestTheShippedCompanionList:
+    """The file this repository ships, read by the code that reads it."""
+
+    def test_it_parses(self) -> None:
+        companions = load_companions(ROOT / "data" / "companions.txt")
+
+        assert companions, "the shipped companion list is empty"
+
+    def test_github_brings_what_the_owner_needed(self) -> None:
+        companions = load_companions(ROOT / "data" / "companions.txt")
+
+        assert "githubassets.com" in companions["github.com"]
+        assert "githubusercontent.com" in companions["github.com"]
+
+    def test_the_asset_list_parses_too(self) -> None:
+        assets = load_domain_file(ROOT / "data" / "web-assets.txt")
+
+        assert "fonts.googleapis.com" in assets
+        assert "cdnjs.cloudflare.com" in assets

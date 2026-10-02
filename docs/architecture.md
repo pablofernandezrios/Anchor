@@ -188,6 +188,18 @@ lost every server is indistinguishable from here, and keeping the old servers
 costs nothing in that case (P4). Links appearing and disappearing, and servers
 changing while they are still visible, are still followed.
 
+**An allowed site brings what it is made of.** A page comes from one domain
+and its stylesheets, fonts and images from several others, so an allowlist
+naming only the site lets it through stripped — the owner's GitHub arrived as
+a column of unstyled links. Anchor cannot infer the connection: a DNS query is
+a name, with no referrer and no tab, so a lookup made for the page in front of
+you is indistinguishable from any other. It is therefore known in advance
+rather than deduced. `web-assets.txt` exempts shared infrastructure in
+allowlist mode only; `companions.txt` maps a site to the domains it cannot
+work without, applied only when that site is allowed. Neither is in force in
+blocklist mode, where the user named what to block. ADR 5 has the reasoning
+and what it costs.
+
 **Encrypted DNS is closed off.** Managed policies disable DoH in Firefox and
 the Chromium family, and the firewall rejects DNS over TLS and the shipped DoH
 endpoints on both TCP and UDP 443. The policies only apply when a browser

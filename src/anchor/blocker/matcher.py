@@ -96,6 +96,18 @@ class Policy:
     domains: frozenset[str]
     essentials: frozenset[str] = frozenset()
 
+    assets: frozenset[str] = frozenset()
+    """Shared web infrastructure, exempt in allowlist mode only (SPEC 8.1).
+
+    Fonts, script repositories and the big content networks: the furniture
+    almost every page is built from. Without them an allowlist session lets a
+    permitted site through and strips it of its stylesheets, which is what
+    the owner saw when GitHub arrived as a column of unstyled links.
+
+    Not applied in blocklist mode. There the user named what to block, and a
+    list Anchor ships must never quietly undo that.
+    """
+
     def matching_rule(self, name: str) -> str | None:
         """The rule that blocks ``name``, or ``None`` if it is allowed.
 
@@ -130,7 +142,11 @@ class Policy:
             return True
         if any(_covers(suffix, name) for suffix in SPECIAL_USE):
             return True
-        return any(_covers(rule, name) for rule in self.essentials)
+        if any(_covers(rule, name) for rule in self.essentials):
+            return True
+        if self.mode is WebMode.ALLOWLIST:
+            return any(_covers(rule, name) for rule in self.assets)
+        return False
 
 
 def load_domain_file(path: Path) -> frozenset[str]:
@@ -157,3 +173,60 @@ def load_domain_file(path: Path) -> frozenset[str]:
             log.warning("%s line %d: %r is not a domain; skipping", path, number, entry)
 
     return frozenset(domains)
+
+
+def load_companions(path: Path) -> dict[str, frozenset[str]]:
+    """Read ``companions.txt``: a site, then the domains it needs (SPEC 8.1).
+
+    Each line is ``site.com: one.example two.example``. A malformed line
+    costs itself and not the file, for the same reason a malformed domain
+    does: a typo in shipped data should not take the whole list down.
+    """
+    found: dict[str, set[str]] = {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as error:
+        log.warning("could not read the companion list at %s: %s", path, error)
+        return {}
+
+    for number, line in enumerate(text.splitlines(), start=1):
+        entry = line.split("#", 1)[0].strip()
+        if not entry:
+            continue
+        site, _, rest = entry.partition(":")
+        if not rest.strip():
+            log.warning("%s line %d: no companions after the colon", path, number)
+            continue
+        try:
+            key = normalise_domain(site)
+        except NotADomainError as error:
+            log.warning("%s line %d: %s", path, number, error)
+            continue
+        for word in rest.split():
+            try:
+                found.setdefault(key, set()).add(normalise_domain(word))
+            except NotADomainError as error:
+                log.warning("%s line %d: %s", path, number, error)
+
+    return {site: frozenset(companions) for site, companions in found.items()}
+
+
+def with_companions(
+    domains: frozenset[str], companions: dict[str, frozenset[str]]
+) -> frozenset[str]:
+    """Add each allowed site's companions to the allowlist (SPEC 8.1).
+
+    Conditional on purpose. A companion rides in only when the site it
+    belongs to is allowed, so this is not a second allowlist bolted onto the
+    first: it is the first one made to work. Allowing github.com brings
+    githubassets.com; allowing nothing brings nothing.
+
+    Companions do not themselves have companions. One hop is enough for what
+    this is for, and a chain would be a quiet way to allow a great deal by
+    naming one thing.
+    """
+    extra: set[str] = set()
+    for site, needed in companions.items():
+        if any(_covers(rule, site) for rule in domains):
+            extra |= needed
+    return domains | extra

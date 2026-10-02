@@ -1,0 +1,49 @@
+# Anchor shared web infrastructure (SPEC 8.1)
+#
+# The hosts that almost every site loads its stylesheets, fonts, scripts and
+# images from. Allowed in allowlist mode only, where everything unnamed is
+# blocked and a permitted site would otherwise arrive without any of them.
+#
+# Why this is a small concession rather than a large one: in allowlist mode
+# you reach a site by its own name. Allowing a content network does not make
+# reddit.com reachable, because reddit.com still does not resolve. These are
+# not destinations anybody navigates to; they are where pages keep their
+# furniture.
+#
+# It is not in force in blocklist mode. There, you named what to block, and a
+# list shipped by Anchor must never quietly undo that.
+#
+# Deliberately shared infrastructure only. A site's own content network --
+# githubassets.com for GitHub, fbcdn.net for Facebook -- belongs in
+# companions.txt, where it applies only if you allowed that site.
+#
+# One domain per line. A domain covers its subdomains. Lines starting with #
+# are ignored. Edit freely: package upgrades will not overwrite your changes.
+
+# --- Fonts and stylesheets ------------------------------------------------
+fonts.googleapis.com
+fonts.gstatic.com
+use.typekit.net
+use.fontawesome.com
+
+# --- Script and stylesheet repositories -----------------------------------
+# Thousands of sites load their libraries from these and nothing else.
+cdnjs.cloudflare.com
+cdn.jsdelivr.net
+unpkg.com
+ajax.googleapis.com
+code.jquery.com
+stackpath.bootstrapcdn.com
+cdn.skypack.dev
+esm.sh
+
+# --- General content networks ---------------------------------------------
+# Shared by enormous numbers of sites. Reaching one of these by name is not
+# how anybody visits anything.
+cloudfront.net
+akamaized.net
+akamaihd.net
+fastly.net
+fastlylb.net
+cloudflareinsights.com
+gstatic.com

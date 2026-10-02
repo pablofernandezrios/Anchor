@@ -42,6 +42,8 @@ package() {
   install -Dm644 packaging/systemd/anchor-agent.service "$pkgdir/usr/lib/systemd/user/anchor-agent.service"
 
   install -Dm644 data/essentials.txt "$pkgdir/usr/share/anchor/essentials.txt"
+  install -Dm644 data/web-assets.txt "$pkgdir/usr/share/anchor/web-assets.txt"
+  install -Dm644 data/companions.txt "$pkgdir/usr/share/anchor/companions.txt"
   install -Dm644 data/doh-endpoints.txt "$pkgdir/usr/share/anchor/doh-endpoints.txt"
   install -Dm644 data/doh-domains.txt "$pkgdir/usr/share/anchor/doh-domains.txt"
   install -Dm644 data/tunnels.txt "$pkgdir/usr/share/anchor/tunnels.txt"

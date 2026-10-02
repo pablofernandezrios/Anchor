@@ -1,0 +1,56 @@
+# Anchor companion domains (SPEC 8.1)
+#
+# A site and the other domains it cannot work without. Each line reads:
+#
+#     site.com: assets.example.net other.example.org
+#
+# The companions are allowed only when the site itself is on your allowlist.
+# Allowing github.com therefore brings githubassets.com with it, and allowing
+# nothing brings nothing. That conditionality is the whole point: it is not a
+# second allowlist, it is the first one made to actually work.
+#
+# Why this file has to exist at all: Anchor sees DNS names and nothing else.
+# A query for github.githubassets.com looks identical whether it came from
+# the GitHub tab you have open or from anything else on the machine, so
+# "allow what the allowed page needs" cannot be inferred -- only known in
+# advance. This is that knowledge, written down.
+#
+# It is best effort and always will be. A site not listed here still works
+# once you add its companions yourself; `anchor stats` names what was
+# refused. Lines starting with # are ignored, and a domain covers its
+# subdomains. Edit freely: package upgrades will not overwrite your changes.
+
+# --- Development ----------------------------------------------------------
+github.com: githubassets.com githubusercontent.com github.io
+gitlab.com: gitlab-static.net gitlab-assets.net
+stackoverflow.com: sstatic.net stackexchange.com
+stackexchange.com: sstatic.net
+pypi.org: pythonhosted.org
+npmjs.com: npmjs.org
+rust-lang.org: crates.io static.crates.io
+developer.mozilla.org: mdn.mozillademos.org
+
+# --- Reference and reading ------------------------------------------------
+wikipedia.org: wikimedia.org wikimediafoundation.org
+archive.org: archive.org
+openstreetmap.org: tile.openstreetmap.org
+
+# --- Mail and documents ---------------------------------------------------
+gmail.com: google.com googleusercontent.com googleapis.com
+mail.google.com: google.com googleusercontent.com googleapis.com
+docs.google.com: google.com googleusercontent.com googleapis.com
+drive.google.com: google.com googleusercontent.com googleapis.com
+outlook.com: office.com office365.com live.com microsoft.com
+office.com: office365.com sharepoint.com microsoft.com
+
+# --- Work ------------------------------------------------------------------
+slack.com: slack-edge.com slack-imgs.com
+notion.so: notion-static.com amazonaws.com
+atlassian.net: atlassian.com atl-paas.net
+zoom.us: zoom.com zoomgov.com
+linear.app: linear.app
+
+# --- Learning ---------------------------------------------------------------
+coursera.org: coursera-course-photos.s3.amazonaws.com
+khanacademy.org: kastatic.org kasandbox.org
+duolingo.com: duolingo.com duolingo-images.s3.amazonaws.com

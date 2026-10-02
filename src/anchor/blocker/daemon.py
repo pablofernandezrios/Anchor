@@ -21,7 +21,7 @@ import logging
 import pwd
 import queue
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from anchor.blocker.apps import InstalledApp, discover
@@ -29,7 +29,12 @@ from anchor.blocker.attempts import AttemptTracker
 from anchor.blocker.constants import JOURNAL_NAME, RESOLVED_DROP_IN, RESOLVER_PORT
 from anchor.blocker.enforcement import AppEnforcer, Closure
 from anchor.blocker.journal import Journal
-from anchor.blocker.matcher import Policy, load_domain_file
+from anchor.blocker.matcher import (
+    Policy,
+    load_companions,
+    load_domain_file,
+    with_companions,
+)
 from anchor.blocker.policies import apply_policies, policies_written
 from anchor.blocker.recent import RecentAnswers
 from anchor.blocker.resolved import (
@@ -78,6 +83,11 @@ class Lists:
     """The lists Anchor ships, which are the blocker's business not the user's."""
 
     essentials: frozenset[str] = frozenset()
+    #: Shared web infrastructure, exempt in allowlist mode (SPEC 8.1).
+    assets: frozenset[str] = frozenset()
+    #: A site and the domains it cannot work without, applied only when that
+    #: site is on the allowlist.
+    companions: dict[str, frozenset[str]] = field(default_factory=dict)
     doh_domains: frozenset[str] = frozenset()
     doh_v4: list[str] | None = None
     doh_v6: list[str] | None = None
@@ -88,6 +98,8 @@ class Lists:
         v4, v6 = split_addresses(load_addresses(data_dir / "doh-endpoints.txt"))
         return cls(
             essentials=load_domain_file(data_dir / "essentials.txt"),
+            assets=load_domain_file(data_dir / "web-assets.txt"),
+            companions=load_companions(data_dir / "companions.txt"),
             doh_domains=load_domain_file(data_dir / "doh-domains.txt"),
             doh_v4=v4,
             doh_v6=v6,
@@ -444,9 +456,21 @@ class BlockerDaemon:
         # The DoH domains are added to whatever the user blocks, in both modes.
         # In blocklist mode they are extra rules; in allowlist mode they would
         # already be blocked, and adding them costs nothing.
-        blocked_domains = domains | self.lists.doh_domains if mode is WebMode.BLOCKLIST else domains
+        if mode is WebMode.BLOCKLIST:
+            listed = domains | self.lists.doh_domains
+        else:
+            # An allowed site brings the domains it cannot work without
+            # (SPEC 8.1). Without this, a permitted site arrives stripped of
+            # its stylesheets, fonts and images, which is how the owner found
+            # GitHub rendered as a column of unstyled links.
+            listed = with_companions(domains, self.lists.companions)
 
-        policy = Policy(mode=mode, domains=blocked_domains, essentials=self.lists.essentials)
+        policy = Policy(
+            mode=mode,
+            domains=listed,
+            essentials=self.lists.essentials,
+            assets=self.lists.assets,
+        )
 
         with self._lock:
             unchanged = (
@@ -515,7 +539,7 @@ class BlockerDaemon:
         apply_policies(self.journal, root=self.policy_root)
 
         self._applied = True
-        log.info("blocking active: %s with %d domain(s)", mode, len(blocked_domains))
+        log.info("blocking active: %s with %d domain(s)", mode, len(listed))
 
     def undo(self) -> None:
         """Put everything back when the session ends."""
